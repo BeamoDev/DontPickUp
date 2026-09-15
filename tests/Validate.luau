@@ -1,0 +1,256 @@
+local fs = require("@lune/fs")
+local Harness = require("./Harness")
+local total = 0
+local function check(value, label)
+	assert(value, label)
+	total += 1
+end
+local root = "src/LServer/Core/"
+local h = Harness.Environment()
+local Schema = h:load(root .. "ProfileSchema.luau")
+local Config = h:load(root .. "Config.luau")
+local Store = h:load(root .. "SessionStore.luau")
+
+check(Schema.Validate(Schema.Default()), "default schema valid")
+local invalid = Schema.Default()
+invalid.Version = 2
+check(not Schema.Validate(invalid), "future schema rejected")
+invalid = Schema.Default()
+invalid.Stats.Deaths = 0 / 0
+check(not Schema.Validate(invalid), "NaN rejected")
+invalid = Schema.Default()
+invalid.Progress.Endings.secret = "true"
+check(not Schema.Validate(invalid), "malformed unlock rejected")
+check(Schema.Decode({}) == nil, "malformed envelope not defaulted")
+check(Schema.Decode(nil).Stats.CasesSolved == 0, "new profile allowed")
+
+local records, failures, responseLost, cancelled = {}, 0, false, false
+local updateHook
+local store = Store.new({
+	config = Config,
+	schema = Schema,
+	now = function()
+		return math.floor(h.time)
+	end,
+	clock = function()
+		return h.time
+	end,
+	wait = function(n)
+		h.time += n
+	end,
+	update = function(userId, transform)
+		if failures > 0 then
+			failures -= 1
+			error("Storage unavailable")
+		end
+		if updateHook then
+			updateHook(userId)
+		end
+		local result = transform(Schema.Copy(records[userId]))
+		if result then
+			records[userId] = Schema.Copy(result)
+		end
+		if responseLost then
+			responseLost = false
+			error("Committed, response lost")
+		end
+		return result
+	end,
+})
+local a = store:Acquire(1, "lobby", function()
+	return false
+end)
+check(a ~= nil and records[1].Lease.Token == "lobby", "acquire fresh owner")
+a.Data.Stats.CasesSolved = 12
+check(store:Write(1, a, a.Data, false, "save-1", h.time + 20), "save current owner")
+check(records[1].Data.Stats.CasesSolved == 12, "save data persisted")
+local before = h.time
+local b = store:Acquire(1, "game", function()
+	return false
+end)
+check(b ~= nil and h.time - before >= Config.LeaseSeconds, "new owner waits full lease")
+check(b.Data.Stats.CasesSolved == 12, "takeover preserves data")
+local ok, reason = store:Write(1, a, a.Data, true, "stale-release", h.time + 20)
+check(
+	not ok and reason == "OwnershipLost" and records[1].Lease.Token == "game",
+	"stale owner cannot save or release"
+)
+responseLost = true
+check(store:Write(1, b, b.Data, true, "release-game", h.time + 20), "ambiguous release retries idempotently")
+check(records[1].Lease == nil, "release clears lease")
+records[2] = { Format = 1, Data = { Version = 900 } }
+local missing, why = store:Acquire(2, "bad", function()
+	return false
+end)
+check(
+	missing == nil and why == "InvalidData" and records[2].Data.Version == 900,
+	"future data remains untouched"
+)
+failures = 2
+local retry = store:Acquire(3, "retry", function()
+	return false
+end)
+check(retry ~= nil, "transient load failure recovers")
+responseLost = true
+local ambiguous = store:Acquire(4, "same-token", function()
+	return false
+end)
+check(ambiguous ~= nil and records[4].Lease.Token == "same-token", "ambiguous acquire reuses token")
+cancelled = false
+updateHook = function(userId)
+	if userId == 5 then
+		cancelled = true
+	end
+end
+local cancelResult = store:Acquire(5, "cancelled", function()
+	return cancelled
+end)
+check(cancelResult == nil and records[5] == nil, "departure before acquire does not create profile")
+updateHook = nil
+records[6] =
+	{ Format = 1, Data = Schema.Default(), Lease = { Token = "cancelled-owner", Expires = h.time + 180 } }
+records[6].Data.Stats.CasesSolved = 99
+check(store:Abandon(6, "cancelled-owner"), "abandon succeeds")
+check(records[6].Data.Stats.CasesSolved == 99 and records[6].Lease == nil, "abandon preserves original data")
+check(
+	store:Abandon(3, "wrong-owner") and records[3].Lease.Token == "retry",
+	"abandon does not unlock someone else"
+)
+
+local Party = h:load("src/LServer/PartyService.luau")
+local host, friend, stranger = h:player(10), h:player(11), h:player(12)
+local ready, friendship = {}, true
+local friendshipHook
+local travelCount = 0
+local deps = {
+	config = Config,
+	clock = function()
+		return h.time
+	end,
+	spawn = h.env.task.spawn,
+	ready = function(player)
+		return ready[player] ~= false
+	end,
+	present = function(player)
+		return player.Parent == h.players
+	end,
+	changed = function() end,
+	friends = function()
+		if friendshipHook then
+			friendshipHook()
+		end
+		return friendship
+	end,
+	canTravel = function()
+		return true
+	end,
+	travel = function()
+		travelCount += 1
+		return true
+	end,
+}
+local party = Party.new(deps)
+check(not party:Create(host, 0 / 0, "Friends"), "NaN capacity rejected")
+check(party:Create(host, 2, "Friends"), "host creates friends party")
+check(not party:Create(host, 2, "Public"), "one party per player")
+local id = party:Get(host).Id
+friendship = false
+check(not party:Join(stranger, id), "nonfriend rejected")
+friendship = true
+check(party:Join(friend, id), "friend joins")
+check(not party:Join(stranger, id), "capacity enforced")
+check(not party:Start(friend), "only host starts")
+check(not party:Start(host), "all members must be ready")
+check(party:Ready(friend, true) and party:Start(host), "ready party starts countdown")
+check(not party:Start(host), "duplicate start rejected")
+check(party:Ready(friend, false) and party:Get(host).State == "Open", "unready cancels countdown")
+check(party:Ready(friend, true) and party:Start(host), "countdown restarts")
+h.time += Config.CountdownSeconds
+party:Tick()
+party:Tick()
+h:drain()
+check(travelCount == 1 and party:Get(host).State == "Teleporting", "countdown dispatches exactly once")
+check(not party:Remove(friend, false), "cannot voluntarily change dispatched roster")
+check(
+	party:Remove(host, true) and party:Get(friend).HostUserId == friend.UserId,
+	"departed host transfers leadership"
+)
+party:Remove(friend, true)
+check(next(party.parties) == nil, "empty party cleaned up")
+party = Party.new(deps)
+party:Create(host, 3, "Friends")
+id = party:Get(host).Id
+friendshipHook = function()
+	party:Remove(host, true)
+end
+check(not party:Join(friend, id) and party:Get(friend) == nil, "yielding friendship rechecks deleted party")
+friendshipHook = nil
+party:Create(host, 3, "Friends")
+id = party:Get(host).Id
+party:Join(friend, id)
+check(party:Kick(host, friend.UserId) and not party:Join(friend, id), "kick blocks rejoin to same party")
+h.time += Config.PartyIdleSeconds + 1
+party:Tick()
+check(next(party.parties) == nil, "idle parties expire")
+
+local Rules = h:load(root .. "AdmissionRules.luau")
+local ticket = {
+	Version = 1,
+	Expires = h.time + 60,
+	LobbyPlaceId = 100,
+	GamePlaceId = 200,
+	PrivateServerId = "reserved",
+	Members = { ["10"] = {} },
+}
+local context = {
+	Now = h.time,
+	SourcePlaceId = 100,
+	SourceGameId = 99,
+	GameId = 99,
+	PlaceId = 200,
+	PrivateServerId = "reserved",
+	PrivateServerOwnerId = 0,
+	JobId = "job",
+	UserId = 10,
+}
+check(Rules.CanClaim(ticket, context), "authorized member admitted")
+for key, value in pairs({
+	SourcePlaceId = 101,
+	SourceGameId = 100,
+	PlaceId = 201,
+	PrivateServerId = "public",
+	PrivateServerOwnerId = 10,
+	UserId = 11,
+	Now = h.time + 61,
+}) do
+	local wrong = table.clone(context)
+	wrong[key] = value
+	check(not Rules.CanClaim(ticket, wrong), "reject invalid admission " .. key)
+end
+ticket.Members["10"].Revoked = true
+check(not Rules.CanClaim(ticket, context), "revoked admission rejected")
+ticket.Members["10"].Revoked = nil
+ticket.JobId = "other-job"
+check(not Rules.CanClaim(ticket, context), "cross-instance party split rejected")
+ticket.JobId = "job"
+ticket.Members["10"].ClaimedJob = "job"
+check(Rules.CanClaim(ticket, context), "same destination claim is idempotent")
+
+local limiter = h:load(root .. "RateLimiter.luau").new(function()
+	return h.time
+end)
+for _ = 1, 8 do
+	check(limiter:Take(host), "initial request budget")
+end
+check(not limiter:Take(host), "request flood rejected")
+h.time += 0.5
+check(limiter:Take(host) and not limiter:Take(host), "request budget replenishes at bounded rate")
+
+for _, name in ipairs(fs.readDir(root)) do
+	check(
+		fs.readFile(root .. name) == fs.readFile("src/GServer/Core/" .. name),
+		"identical cross-place Core " .. name
+	)
+end
+local compiled = Harness.Compile("src") + Harness.Compile("tests")
+print(string.format("PASS: %d regression checks; %d Luau files compiled.", total, compiled))

@@ -11,14 +11,19 @@ for _, name in ipairs({
 	"DataStoreService",
 	"MemoryStoreService",
 	"TeleportService",
+	"Lighting",
+	"TweenService",
 }) do
 	services[name] = game:GetService(name)
 end
 assert(services.RunService:IsStudio() or game.PlaceId == Config.GamePlaceId, "Game bootstrap in wrong place")
 local closing = false
-local data, travel, session, network
+local data, travel, session, network, prototype
 game:BindToClose(function()
 	closing = true
+	if prototype then
+		prototype:Shutdown()
+	end
 	if network then
 		network.closing = true
 	end
@@ -34,8 +39,15 @@ local tickets = require(root.Core.TicketStore).new(services, Config)
 travel = require(root.Core.TravelService).new(services, Config, data, tickets)
 session = require(root.GameSession).new(services, Config, data, tickets)
 network = require(root.Core.Network).new(services, "Game")
-require(root.Runtime).Set({ Data = data, Session = session, Travel = travel })
+network.root:SetAttribute("PrototypeEnabled", require(root.PrototypeConfig).Enabled)
+if require(root.PrototypeConfig).Enabled then
+	prototype = require(root.GamePrototype).new(services, data, session, network)
+end
+require(root.Runtime).Set({ Data = data, Session = session, Travel = travel, Prototype = prototype })
 network:Bind(function(player, action, payload)
+	if prototype and (action == "GetPrototype" or action == "PrototypeAction") then
+		return prototype:Request(player, action, payload)
+	end
 	if action == "GetState" then
 		return { Ok = true, State = session:Snapshot(), DataReady = data:IsReady(player) }
 	end
@@ -44,6 +56,9 @@ network:Bind(function(player, action, payload)
 		return { Ok = ok, Code = reason }
 	end
 	if action == "ReturnLobby" then
+		if prototype and not prototype.run:CanReturn(player) then
+			return { Ok = false, Code = "ShiftClosed" }
+		end
 		local ok, reason = travel:Begin({ player }, "Lobby", function()
 			return closing or player.Parent ~= services.Players
 		end)
@@ -69,12 +84,18 @@ local function added(player)
 	end
 	if data:Load(player) then
 		session:Loaded(player)
+		if prototype then
+			prototype:Add(player)
+		end
 	else
 		session:Remove(player)
 	end
 end
 services.Players.PlayerRemoving:Connect(function(player)
 	joining[player] = nil
+	if prototype then
+		prototype:Remove(player)
+	end
 	session:Remove(player)
 	travel:Remove(player)
 	network:Remove(player)
@@ -85,10 +106,17 @@ for _, player in ipairs(services.Players:GetPlayers()) do
 	task.spawn(added, player)
 end
 task.spawn(function()
+	local nextServices = 0
 	while not closing do
-		task.wait(1)
-		data:Tick()
-		session:Tick()
-		travel:Tick()
+		task.wait(0.25)
+		if os.clock() >= nextServices then
+			nextServices = os.clock() + 1
+			data:Tick()
+			session:Tick()
+			travel:Tick()
+		end
+		if prototype then
+			prototype:Tick()
+		end
 	end
 end)

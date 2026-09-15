@@ -11,15 +11,12 @@ function Party:Snapshot(party)
 	end
 	local members = {}
 	for _, member in ipairs(party.Members) do
-		table.insert(
-			members,
-			{
-				UserId = member.Player.UserId,
-				Name = member.Player.Name,
-				DisplayName = member.Player.DisplayName,
-				Ready = member.Ready,
-			}
-		)
+		table.insert(members, {
+			UserId = member.Player.UserId,
+			Name = member.Player.Name,
+			DisplayName = member.Player.DisplayName,
+			Ready = member.Ready,
+		})
 	end
 	return {
 		Id = party.Id,
@@ -31,6 +28,7 @@ function Party:Snapshot(party)
 		CountdownEndsAt = party.CountdownEndsAt,
 		Revision = party.Revision,
 		LastError = party.LastError,
+		Mode = party.Mode,
 	}
 end
 
@@ -42,17 +40,15 @@ function Party:List()
 	local result = {}
 	for _, party in pairs(self.parties) do
 		if party.State == "Open" and #party.Members < party.Capacity then
-			table.insert(
-				result,
-				{
-					Id = party.Id,
-					HostUserId = party.Host.UserId,
-					HostName = party.Host.DisplayName,
-					Access = party.Access,
-					Capacity = party.Capacity,
-					Count = #party.Members,
-				}
-			)
+			table.insert(result, {
+				Id = party.Id,
+				HostUserId = party.Host.UserId,
+				HostName = party.Host.DisplayName,
+				Access = party.Access,
+				Capacity = party.Capacity,
+				Count = #party.Members,
+				Mode = party.Mode,
+			})
 		end
 	end
 	table.sort(result, function(a, b)
@@ -71,7 +67,11 @@ function Party:_publish(party)
 	end
 end
 
-function Party:Create(player, capacity, access)
+function Party:Create(player, capacity, access, mode)
+	mode = mode or "Story"
+	if mode ~= "Story" and mode ~= "Endless" then
+		return false, "InvalidMode"
+	end
 	if self.closing or not self.d.ready(player) then
 		return false, "DataNotReady"
 	end
@@ -93,6 +93,7 @@ function Party:Create(player, capacity, access)
 		Host = player,
 		Capacity = capacity,
 		Access = access,
+		Mode = mode,
 		State = "Open",
 		Members = { { Player = player, Ready = true } },
 		Banned = {},
@@ -165,7 +166,7 @@ function Party:Ready(player, ready)
 	return true
 end
 
-function Party:Start(player)
+function Party:Start(player, countdownSeconds)
 	local party = self.membership[player]
 	if self.closing or not party or party.Host ~= player or party.State ~= "Open" then
 		return false, "HostOnly"
@@ -181,7 +182,8 @@ function Party:Start(player)
 	end
 	party.State = "Countdown"
 	party.LastError = nil
-	party.CountdownEndsAt = self.d.clock() + self.d.config.CountdownSeconds
+	-- Physical queues pass the remainder of their existing departure deadline.
+	party.CountdownEndsAt = self.d.clock() + (countdownSeconds or self.d.config.CountdownSeconds)
 	self:_publish(party)
 	return true
 end
@@ -288,7 +290,7 @@ function Party:Tick()
 						return self.closing or party.Cancelled or self.parties[party.Id] ~= party
 					end, function()
 						self:_recover(party, "TransferFinished")
-					end)
+					end, { Mode = party.Mode })
 					if not ok then
 						self:_recover(party, reason)
 					elseif self.parties[party.Id] == party then

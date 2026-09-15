@@ -2,18 +2,15 @@ local Travel = {}
 Travel.__index = Travel
 
 function Travel.new(services, config, data, tickets)
-	local self = setmetatable(
-		{
-			s = services,
-			config = config,
-			data = data,
-			tickets = tickets,
-			batches = {},
-			byPlayer = {},
-			closing = false,
-		},
-		Travel
-	)
+	local self = setmetatable({
+		s = services,
+		config = config,
+		data = data,
+		tickets = tickets,
+		batches = {},
+		byPlayer = {},
+		closing = false,
+	}, Travel)
 	self.connection = services.TeleportService.TeleportInitFailed:Connect(
 		function(player, result, _, placeId, options)
 			local item = self.byPlayer[player]
@@ -72,7 +69,8 @@ function Travel:_send(batch, items)
 	if batch.AccessCode then
 		options.ReservedServerAccessCode = batch.AccessCode
 	end
-	options:SetTeleportData({ TicketId = batch.TicketId, AttemptId = attemptId })
+	-- Public loading-screen metadata only. The destination trusts the admission ticket.
+	options:SetTeleportData({ TicketId = batch.TicketId, AttemptId = attemptId, GameData = batch.GameData })
 	local ok = pcall(function()
 		self.s.TeleportService:TeleportAsync(batch.PlaceId, players, options)
 	end)
@@ -87,9 +85,27 @@ function Travel:_send(batch, items)
 	-- Accepted only means initiation. Removal or a matching failure event settles each player.
 end
 
-function Travel:Begin(players, destination, cancelled, finished)
-	if self.closing or self.s.RunService:IsStudio() then
+function Travel:Begin(players, destination, cancelled, finished, options)
+	local studio = self.s.RunService:IsStudio()
+	if self.closing then
+		return false, "ServerClosing"
+	end
+	if studio and not self.config.StudioTeleportPreview then
 		return false, "TeleportUnavailableInStudio"
+	end
+	local mode = options and options.Mode or "Story"
+	if mode ~= "Story" and mode ~= "Endless" then
+		return false, "InvalidMode"
+	end
+	if #players < 1 or #players > self.config.MaxPartySize then
+		return false, "InvalidRoster"
+	end
+	local unique = {}
+	for _, player in ipairs(players) do
+		if unique[player] then
+			return false, "InvalidRoster"
+		end
+		unique[player] = true
 	end
 	local placeId = destination == "Game" and self.config.GamePlaceId or self.config.LobbyPlaceId
 	if placeId <= 0 or placeId == game.PlaceId then
@@ -101,7 +117,7 @@ function Travel:Begin(players, destination, cancelled, finished)
 		end
 	end
 	local batch = { PlaceId = placeId, Items = {}, Finished = finished }
-	if destination == "Game" then
+	if destination == "Game" and not studio then
 		local privateId
 		for attempt = 1, 3 do
 			if cancelled() or self.closing then
@@ -140,12 +156,42 @@ function Travel:Begin(players, destination, cancelled, finished)
 	if cancelled() or self.closing then
 		return rollback("Cancelled")
 	end
+	if studio then
+		local roster = {}
+		for _, player in ipairs(players) do
+			if player.Parent ~= self.s.Players then
+				return rollback("RosterChanged")
+			end
+			table.insert(roster, string.format("%s (%d)", player.Name, player.UserId))
+			player:SetAttribute("DPU_TravelStatus", "StudioPreviewComplete")
+		end
+		print(
+			string.format(
+				"[DPU][Studio] SAVE/ROSTER CHECKS PASSED | Mode=%s | Players=%d | Destination=%s",
+				mode,
+				#players,
+				tostring(placeId)
+			)
+		)
+		print(
+			"[DPU][Studio] WOULD TELEPORT: "
+				.. table.concat(roster, ", ")
+				.. ". No reservation, admission write, or teleport was attempted."
+		)
+		print(
+			"[DPU][Studio] StudioSaving="
+				.. tostring(self.config.StudioSaving)
+				.. "; live teleport and storage success are not verified by this preview."
+		)
+		return rollback("StudioPreviewComplete")
+	end
 	if destination == "Game" then
 		batch.TicketId = self.s.HttpService:GenerateGUID(false)
-		local ticket = self.tickets:Create(batch.TicketId, batch.PrivateId, players)
+		local ticket = self.tickets:Create(batch.TicketId, batch.PrivateId, players, mode)
 		if not ticket then
 			return rollback("AdmissionUnavailable")
 		end
+		batch.GameData = ticket.GameData and table.clone(ticket.GameData) or nil
 		batch.Expires = ticket.Expires
 	end
 	-- Recheck after every yielding preparation stage, including MemoryStore.

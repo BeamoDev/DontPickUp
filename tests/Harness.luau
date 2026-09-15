@@ -10,14 +10,138 @@ function Harness.Environment()
 		local object
 		function methods:IsA(name)
 			return class == name
+				or (name == "GuiButton" and (class == "TextButton" or class == "ImageButton"))
+				or (name == "GuiObject" and table.find(
+					{ "Frame", "ScrollingFrame", "TextLabel", "TextButton", "ImageLabel", "ImageButton" },
+					class
+				) ~= nil)
+				or (name == "BasePart" and class == "Part")
 		end
-		function methods:FindFirstChild(name)
+		function methods:FindFirstChild(name, recursive)
 			for _, child in ipairs(properties.children) do
 				if child.Name == name then
 					return child
 				end
 			end
+			if recursive then
+				for _, child in ipairs(properties.children) do
+					local found = child:FindFirstChild(name, true)
+					if found then
+						return found
+					end
+				end
+			end
 			return nil
+		end
+		function methods:GetChildren()
+			return table.clone(properties.children)
+		end
+		function methods:GetDescendants()
+			local descendants = {}
+			for _, child in ipairs(properties.children) do
+				table.insert(descendants, child)
+				for _, descendant in ipairs(child:GetDescendants()) do
+					table.insert(descendants, descendant)
+				end
+			end
+			return descendants
+		end
+		function methods:PivotTo(frame)
+			if properties.PivotTo then
+				return properties.PivotTo(self, frame)
+			end
+			local previous = properties.WorldPivot or h.env.CFrame.new()
+			for _, descendant in ipairs(self:GetDescendants()) do
+				if descendant:IsA("BasePart") then
+					descendant.CFrame = frame * previous:ToObjectSpace(descendant.CFrame)
+					descendant.Position = descendant.CFrame.Position
+				end
+			end
+			properties.WorldPivot = frame
+		end
+		function methods:GetPlayers()
+			local players = {}
+			for _, child in ipairs(properties.children) do
+				if child:IsA("Player") then
+					table.insert(players, child)
+				end
+			end
+			return players
+		end
+		function methods:FindFirstChildWhichIsA(name, recursive)
+			for _, child in ipairs(properties.children) do
+				if child:IsA(name) then
+					return child
+				end
+			end
+			if recursive then
+				for _, child in ipairs(properties.children) do
+					local found = child:FindFirstChildWhichIsA(name, true)
+					if found then
+						return found
+					end
+				end
+			end
+			return nil
+		end
+		function methods:FindFirstChildOfClass(name)
+			return self:FindFirstChildWhichIsA(name)
+		end
+		function methods:IsDescendantOf(parent)
+			local current = properties.Parent
+			while current do
+				if current == parent then
+					return true
+				end
+				current = current.Parent
+			end
+			return false
+		end
+		function methods:GetFullName()
+			return properties.Parent and properties.Parent:GetFullName() .. "." .. properties.Name
+				or properties.Name
+		end
+		function methods:Clone()
+			local copy = newInstance(class)
+			for key, value in pairs(properties) do
+				if key ~= "Parent" and key ~= "children" and key ~= "attributes" and key ~= "Activated" then
+					copy[key] = value
+				end
+			end
+			for key, value in pairs(properties.attributes) do
+				copy:SetAttribute(key, value)
+			end
+			for _, child in ipairs(properties.children) do
+				local clone = child:Clone()
+				clone.Parent = copy
+			end
+			return copy
+		end
+		function methods:Destroy()
+			for _, child in ipairs(table.clone(properties.children)) do
+				child:Destroy()
+			end
+			self.Parent = nil
+		end
+		if class == "TextButton" or class == "ImageButton" then
+			local connections = {}
+			properties.Activated = {
+				Connect = function(_, callback)
+					local connection = { Connected = true, callback = callback }
+					function connection:Disconnect()
+						self.Connected = false
+					end
+					table.insert(connections, connection)
+					return connection
+				end,
+				Fire = function()
+					for _, connection in ipairs(connections) do
+						if connection.Connected then
+							connection.callback()
+						end
+					end
+				end,
+			}
 		end
 		function methods:SetAttribute(name, value)
 			properties.attributes[name] = value

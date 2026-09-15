@@ -3,19 +3,30 @@ local TicketStore = {}
 TicketStore.__index = TicketStore
 
 function TicketStore.new(services, config)
-	return setmetatable(
-		{
-			s = services,
-			config = config,
-			map = services.MemoryStoreService:GetHashMap(
-				config.TicketMapName .. (services.RunService:IsStudio() and "_STUDIO" or "")
-			),
-		},
-		TicketStore
-	)
+	return setmetatable({
+		s = services,
+		config = config,
+		map = services.MemoryStoreService:GetHashMap(
+			config.TicketMapName .. (services.RunService:IsStudio() and "_STUDIO" or "")
+		),
+	}, TicketStore)
 end
 
-function TicketStore:Create(id, privateServerId, players)
+function TicketStore:Create(id, privateServerId, players, mode)
+	mode = mode or "Story"
+	if mode ~= "Story" and mode ~= "Endless" then
+		return nil
+	end
+	if #players < 1 or #players > self.config.MaxPartySize then
+		return nil
+	end
+	local unique = {}
+	for _, player in ipairs(players) do
+		if unique[player.UserId] then
+			return nil
+		end
+		unique[player.UserId] = true
+	end
 	local ticket = {
 		Version = 1,
 		Expires = os.time() + self.config.TicketSeconds,
@@ -23,6 +34,8 @@ function TicketStore:Create(id, privateServerId, players)
 		GamePlaceId = self.config.GamePlaceId,
 		PrivateServerId = privateServerId,
 		Members = {},
+		Mode = mode,
+		GameData = { Version = 1, Mode = mode, StartNight = 1, PartySize = #players },
 	}
 	for _, player in ipairs(players) do
 		ticket.Members[tostring(player.UserId)] = {}
@@ -45,7 +58,7 @@ function TicketStore:Claim(player)
 	local ok, join = pcall(function()
 		return player:GetJoinData()
 	end)
-	if not ok or type(join.TeleportData) ~= "table" then
+	if not ok or type(join) ~= "table" or type(join.TeleportData) ~= "table" then
 		return nil, "MissingAdmission"
 	end
 	local id = join.TeleportData.TicketId
@@ -56,20 +69,17 @@ function TicketStore:Claim(player)
 	for attempt = 1, 3 do
 		local claimed, ticket = pcall(function()
 			return self.map:UpdateAsync(id, function(old)
-				local allowed, why = Rules.CanClaim(
-					old,
-					{
-						Now = os.time(),
-						UserId = player.UserId,
-						SourcePlaceId = join.SourcePlaceId,
-						SourceGameId = join.SourceGameId,
-						GameId = game.GameId,
-						PlaceId = game.PlaceId,
-						PrivateServerId = game.PrivateServerId,
-						PrivateServerOwnerId = game.PrivateServerOwnerId,
-						JobId = game.JobId,
-					}
-				)
+				local allowed, why = Rules.CanClaim(old, {
+					Now = os.time(),
+					UserId = player.UserId,
+					SourcePlaceId = join.SourcePlaceId,
+					SourceGameId = join.SourceGameId,
+					GameId = game.GameId,
+					PlaceId = game.PlaceId,
+					PrivateServerId = game.PrivateServerId,
+					PrivateServerOwnerId = game.PrivateServerOwnerId,
+					JobId = game.JobId,
+				})
 				if not allowed then
 					reason = why
 					return nil

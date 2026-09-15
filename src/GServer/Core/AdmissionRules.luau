@@ -2,6 +2,14 @@ local Rules = {}
 
 function Rules.CanClaim(ticket, context)
 	if
+		type(ticket) == "table"
+		and ticket.Mode ~= nil
+		and ticket.Mode ~= "Story"
+		and ticket.Mode ~= "Endless"
+	then
+		return false, "InvalidMode"
+	end
+	if
 		type(ticket) ~= "table"
 		or ticket.Version ~= 1
 		or type(ticket.Expires) ~= "number"
@@ -22,6 +30,29 @@ function Rules.CanClaim(ticket, context)
 		return false, "WrongDestination"
 	end
 	local member = ticket.Members[tostring(context.UserId)]
+	local count = 0
+	for _, entry in pairs(ticket.Members) do
+		if type(entry) ~= "table" then
+			return false, "InvalidRoster"
+		end
+		count += 1
+	end
+	if count < 1 or count > 4 then
+		return false, "InvalidRoster"
+	end
+	local data = ticket.GameData
+	if
+		data ~= nil
+		and (
+			type(data) ~= "table"
+			or data.Version ~= 1
+			or data.Mode ~= ticket.Mode
+			or data.StartNight ~= 1
+			or data.PartySize ~= count
+		)
+	then
+		return false, "InvalidGameData"
+	end
 	if type(member) ~= "table" or member.Revoked then
 		return false, "NotInvited"
 	end

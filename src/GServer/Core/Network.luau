@@ -13,19 +13,25 @@ end
 
 function Network.new(services, environment)
 	local root = owned(services.ReplicatedStorage, "Folder", "DontPickUp" .. environment .. "Net")
-	local self = setmetatable(
-		{
-			root = root,
-			request = owned(root, "RemoteFunction", "Request"),
-			changed = owned(root, "RemoteEvent", "StateChanged"),
-			busy = {},
-			limiter = Limiter.new(os.clock),
-			cooldowns = {},
-			closing = false,
-		},
-		Network
-	)
+	local self = setmetatable({
+		root = root,
+		request = owned(root, "RemoteFunction", "Request"),
+		changed = owned(root, "RemoteEvent", "StateChanged"),
+		busy = {},
+		limiter = Limiter.new(os.clock),
+		cooldowns = {},
+		closing = false,
+	}, Network)
+	if environment == "Lobby" then
+		self.queueChanged = owned(root, "RemoteEvent", "QueueStateChanged")
+	end
 	return self
+end
+
+function Network:PushQueue(player, snapshot)
+	if self.queueChanged and player.Parent then
+		self.queueChanged:FireClient(player, snapshot)
+	end
 end
 
 function Network:Bind(handler)
@@ -49,7 +55,7 @@ function Network:Bind(handler)
 		for key, value in pairs(payload) do
 			fields += 1
 			if
-				fields > 4
+				fields > (action == "PrototypeAction" and 6 or 4)
 				or type(key) ~= "string"
 				or #key > 24
 				or (type(value) ~= "string" and type(value) ~= "number" and type(value) ~= "boolean")

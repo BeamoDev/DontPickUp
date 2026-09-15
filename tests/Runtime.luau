@@ -8,6 +8,10 @@ local core = "src/LServer/Core/"
 
 local function travelFixture()
 	local h = Harness.Environment()
+	h.prints = {}
+	h.env.print = function(...)
+		table.insert(h.prints, table.pack(...))
+	end
 	local config = h:load(core .. "Config.luau")
 	local frozen, failSave, packets = {}, {}, {}
 	local reservations, revocations = 0, 0
@@ -58,8 +62,11 @@ local function travelFixture()
 	}
 	local revokeAllowed = true
 	local tickets = {
-		Create = function()
-			return { Expires = h.time + 300 }
+		Create = function(_, _, _, players, mode)
+			return {
+				Expires = h.time + 300,
+				GameData = { Version = 1, Mode = mode, StartNight = 1, PartySize = #players },
+			}
 		end,
 		Revoke = function()
 			revocations += 1
@@ -344,30 +351,47 @@ do
 			return stored[id]
 		end,
 	}
-	local tickets = h:load(core .. "TicketStore.luau").new(
-		{
-			MemoryStoreService = {
-				GetHashMap = function()
-					return map
-				end,
-			},
-			RunService = {
-				IsStudio = function()
-					return false
-				end,
-			},
+	local tickets = h:load(core .. "TicketStore.luau").new({
+		MemoryStoreService = {
+			GetHashMap = function()
+				return map
+			end,
 		},
-		Config
-	)
+		RunService = {
+			IsStudio = function()
+				return false
+			end,
+		},
+	}, Config)
 	local a, b = h:player(1), h:player(2)
 	local id = "00000000-0000-0000-0000-000000000001"
-	check(tickets:Create(id, "private-id", { a, b }) ~= nil, "admission roster stored")
+	check(tickets:Create(id, "private-id", { a, b }, "Endless") ~= nil, "admission roster stored")
+	check(stored[id].Mode == "Endless", "mode is stored in server-side admission")
+	check(
+		stored[id].GameData.Mode == "Endless"
+			and stored[id].GameData.StartNight == 1
+			and stored[id].GameData.PartySize == 2,
+		"server ticket binds mode, starting night and full roster size"
+	)
+	check(
+		tickets:Create("duplicate", "private-id", { a, a }, "Story") == nil,
+		"ticket creation rejects duplicate members"
+	)
 	h.env.game.PlaceId = Config.GamePlaceId
 	h.env.game.PrivateServerId = "private-id"
 	h.env.game.JobId = "destination"
-	a.JoinData = { SourcePlaceId = Config.LobbyPlaceId, SourceGameId = 99, TeleportData = { TicketId = id } }
+	a.JoinData = {
+		SourcePlaceId = Config.LobbyPlaceId,
+		SourceGameId = 99,
+		TeleportData = { TicketId = id, GameData = { Mode = "Story", StartNight = 900 } },
+	}
 	b.JoinData = a.JoinData
 	check(tickets:Claim(a) ~= nil, "destination claims admission atomically")
+	check(
+		tickets:Claim(a).Ticket.GameData.Mode == "Endless"
+			and tickets:Claim(a).Ticket.GameData.StartNight == 1,
+		"forged teleport presentation data cannot change authoritative mode or starting night"
+	)
 	check(tickets:Claim(a) ~= nil, "duplicate destination claim succeeds idempotently")
 	check(not tickets:Revoke(id, 1, h.time + 300), "source cannot revoke already arrived member")
 	check(tickets:Revoke(id, 2, h.time + 300), "source revokes failed member")
@@ -419,9 +443,10 @@ do
 	check(session:IsReady(), "whole loaded party can start")
 	session:Remove(b)
 	check(
-		not session:IsReady() and session.state == "Interrupted",
-		"departed party member interrupts session"
+		session:IsReady() and session.state == "Ready" and session.expected["2"] == nil,
+		"departure after admission preserves the remaining party's run"
 	)
+	check(not session:Admit(b), "departed players cannot rejoin a running admission")
 	local second = h:load("src/GServer/GameSession.luau").new(
 		{
 			Players = h.players,
@@ -472,6 +497,145 @@ do
 	)
 	net.busy[player] = true
 	check(not net.request.OnServerInvoke(player, "GetState").Ok, "overlapping yielding requests blocked")
+	local worker = h:player(42)
+	local input = {
+		RunId = "run",
+		Action = "PuzzleInput",
+		OrderId = "phone",
+		WorkId = "task",
+		Move = 1,
+		PuzzleRevision = 0,
+	}
+	check(
+		net.request.OnServerInvoke(worker, "PrototypeAction", input).Ok,
+		"six-field puzzle intent reaches gameplay handler"
+	)
+	input.Extra = true
+	check(
+		not net.request.OnServerInvoke(worker, "PrototypeAction", input).Ok,
+		"puzzle payload still rejects excessive fields"
+	)
+	input.Extra = nil
+	check(
+		not net.request.OnServerInvoke(worker, "Join", input).Ok,
+		"ordinary requests retain four-field bound"
+	)
+end
+
+do
+	local h, travel, f = travelFixture()
+	local a, b = h:player(1), h:player(2)
+	f.source.RunService.IsStudio = function()
+		return true
+	end
+	f.source.TeleportService.ReserveServerAsync = function()
+		error("Studio must not reserve")
+	end
+	f.tickets.Create = function()
+		error("Studio must not write admission")
+	end
+	local ok, reason = travel:Begin({ a, b }, "Game", function()
+		return false
+	end, nil, { Mode = "Endless" })
+	check(
+		not ok and reason == "StudioPreviewComplete",
+		"Studio completes validated preview without claiming a teleport"
+	)
+	check(
+		#f.packets == 0 and not f.frozen[a] and not f.frozen[b],
+		"preview thaws every saved member and never teleports"
+	)
+	check(
+		#h.prints == 3
+			and string.find(h.prints[1][1], "Mode=Endless", 1, true) ~= nil
+			and string.find(h.prints[2][1], "User2 (2)", 1, true) ~= nil,
+		"Studio prints selected mode, validated roster, and destination"
+	)
+	check(
+		a:GetAttribute("DPU_TravelStatus") == "StudioPreviewComplete",
+		"preview publishes explicit diagnostic status"
+	)
+	h.prints = {}
+	f.failSave[b] = true
+	ok, reason = travel:Begin({ a, b }, "Game", function()
+		return false
+	end, nil, { Mode = "Story" })
+	check(
+		not ok and reason == "SaveOrRosterChanged" and #h.prints == 0 and not f.frozen[a],
+		"failed save cannot print false Studio success"
+	)
+end
+
+for count = 1, 4 do
+	for _, mode in ipairs({ "Story", "Endless" }) do
+		local h, travel, f = travelFixture()
+		local players = {}
+		for i = 1, count do
+			players[i] = h:player(i)
+		end
+		check(
+			travel:Begin(players, "Game", function()
+				return false
+			end, nil, { Mode = mode }),
+			"1-4 member party can prepare a mode-specific teleport"
+		)
+		travel:Tick()
+		h:drain()
+		check(
+			#f.packets == 1 and #f.packets[1].Players == count and f.reservations() == 1,
+			"whole party shares one private reservation"
+		)
+		local payload = f.packets[1].Options:GetTeleportData()
+		check(
+			payload.GameData.Mode == mode
+				and payload.GameData.PartySize == count
+				and payload.GameData.StartNight == 1
+				and payload.Profile == nil,
+			"public handoff carries only run metadata"
+		)
+		for _, player in ipairs(players) do
+			check(f.frozen[player], "each profile was frozen and saved before dispatch")
+		end
+		local members = {}
+		for _, player in ipairs(players) do
+			members[tostring(player.UserId)] = {}
+		end
+		local session = h:load("src/GServer/GameSession.luau").new(
+			{
+				Players = h.players,
+				RunService = f.source.RunService,
+				ReplicatedStorage = h.instance("ReplicatedStorage"),
+			},
+			f.config,
+			{
+				IsReady = function()
+					return true
+				end,
+			},
+			{
+				Claim = function()
+					return {
+						Id = "run",
+						Ticket = { Mode = mode, GameData = payload.GameData, Members = members },
+					}
+				end,
+			}
+		)
+		for i, player in ipairs(players) do
+			check(session:Admit(player), "destination admits expected member")
+			session:Loaded(player)
+			if i == count then
+				session:Tick()
+			end
+			if i < count then
+				check(not session:IsReady(), "partial arrival cannot start")
+			end
+		end
+		check(
+			session:IsReady() and session:Snapshot().GameData.Mode == mode,
+			"loaded destination uses authoritative mode and game data"
+		)
+	end
 end
 
 print(string.format("PASS: %d runtime fault and integration checks.", total))

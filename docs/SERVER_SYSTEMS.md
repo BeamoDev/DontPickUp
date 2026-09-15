@@ -4,7 +4,7 @@
 
 Implemented: parties within one Lobby server, friends-only/public admission, ready checks, host countdown, reserved-server group teleports, retries, destination admission, party arrival gating, player profiles, settings, progress APIs, autosave, departure saves, and shutdown cleanup.
 
-Queue/menu/phone UI, physical queue pads, global cross-server party discovery, invitations into a different Lobby server, chapter gameplay, purchases, and reconnect-to-running-session matchmaking are not implemented. Friends first join the same Lobby server and then join the host's party. A client interface or server interaction can use the APIs below without any physical models.
+Authored walk-in queues are connected; see [Lobby queues](LOBBY_QUEUES.md). A [Game prototype](GAME_PROTOTYPE.md) now supplies a generated shop, tutorial, phone repairs, customers, a night clock, hazards, voting, and results. Full campaign gameplay, cross-server party discovery/invitations, purchases, and reconnect-to-running-session matchmaking remain unimplemented. Friends first join the same Lobby server and enter the same queue. General party APIs remain available independently of physical models.
 
 ## Studio setup
 
@@ -28,8 +28,16 @@ No remotes or player folders need to be manually authored. Existing client/share
 | --- | --- |
 | `LServer/Bootstrap.server.luau` | Lobby lifecycle, request routing, one-second service scheduling |
 | `LServer/PartyService.luau` | Party roster, permissions, ready state, countdown, recovery |
+| `LServer/WorldQueueService.luau`, `QueueWorld.luau`, `QueueGeometry.luau` | Physical pad reservations, entry/exit, gathering, board and member views |
+| `LServer/QueueBillboard.luau` | Authored world sign: mode icon, host title, player count, green/amber status, legacy name fallbacks |
+| `LClient/QueueController.local.luau`, `QueueView.luau`, `QueueRequests.luau` | Authored UI/status binding, mode/capacity draft, scoped Create/Leave requests, timeout ownership, respawn rebinding |
+| `LClient/QueueBillboardMotion.luau` | Local world-sign transitions, cancellable tweens, authored scale/alpha restoration, reduced-effects support |
 | `GServer/Bootstrap.server.luau` | Admission before profile loading, Game lifecycle, return-to-Lobby request |
 | `GServer/GameSession.luau` | Expected party, loaded members, all-member start gate |
+| `GServer/GamePrototype.luau`, `ShiftService.luau`, `PrototypeWorld.luau`, `PrototypeConfig.luau` | Playable introductory night, generated shop, server interactions, hazards, results, profile integration |
+| `GClient/PrototypeController.local.luau`, `PrototypeView.luau` | Game tutorial/HUD, vote/results interface, objective highlight, spectator camera |
+| `GServer/RepairTemplates.luau`, `GClient/RepairPresentation.luau` | Reusable phone template, local component highlights/progress, interruptible camera close-ups |
+| `GServer/Workshop.luau`, `CustomerCatalog.luau` | Physical repair chair and carried parts; 270 server-only customers, variable service requirements and chapter clues |
 | Each `Runtime.luau` | References for other server modules after startup |
 | `Core/Config.luau` | Place IDs, limits, storage names, Studio settings |
 | `Core/ProfileSchema.luau` | Defaults, strict known-field validation, future migration entry point |
@@ -53,6 +61,7 @@ The helper copies only the named Core files and refuses unexpected extra Game Co
 The server creates:
 
 - Lobby: `ReplicatedStorage.DontPickUpLobbyNet.Request` (**RemoteFunction**) and `.StateChanged` (**RemoteEvent**).
+- Lobby physical UI also subscribes to `.QueueStateChanged` (**RemoteEvent**) and uses `GetQueueState`, `QueueCreate`, and `QueueLeave`; see the [queue contract](LOBBY_QUEUES.md).
 - Game: `ReplicatedStorage.DontPickUpGameNet.Request` and `.StateChanged`. Game session changes are currently exposed through the `DontPickUpGameSession` folder attributes; the Game `StateChanged` event is reserved for future interface integration.
 
 Call `Request:InvokeServer(action, payload)`. Responses are `{ Ok: boolean, Code: string?, State: table? }`. Handle rejected requests and transport errors in the future client. Do not start client countdowns independently: party `CountdownEndsAt` uses `workspace:GetServerTimeNow()`.
@@ -62,7 +71,7 @@ Call `Request:InvokeServer(action, payload)`. Responses are `{ Ok: boolean, Code
 | Action | Payload | Meaning |
 | --- | --- | --- |
 | `GetState` | none | Current party, up to 50 joinable parties, and DataReady |
-| `Create` | `{ Capacity = 4, Access = "Friends" }` | Host creates a party; capacity 1-4; Friends or Public |
+| `Create` | `{ Capacity = 4, Access = "Friends", Mode = "Story" }` | Nonphysical API party; capacity 1-4; Friends/Public; Story/Endless |
 | `Join` | `{ PartyId = "1" }` | Join an existing local party; server verifies friendship if needed |
 | `Leave` | none | Leave before transfer preparation; host passes to oldest remaining member |
 | `Ready` | `{ Ready = true }` | Change readiness; unready cancels a countdown |
@@ -72,6 +81,8 @@ Call `Request:InvokeServer(action, payload)`. Responses are `{ Ok: boolean, Code
 | `SetSetting` | `{ Key = "Subtitles", Value = true }` | Save an allowlisted personal setting |
 
 The host begins ready when creating a party. New members begin unready. Full capacity is not required; everyone currently in the party must be ready. After a failed transfer, remaining members must ready again. Open parties expire after ten minutes without joining/ready activity.
+
+These roster-control actions apply to nonphysical parties. Physical pads handle readiness/departure automatically and require `QueueLeave` with the current `EntryId`; generic Leave/Ready/Start/Cancel/Kick cannot override a physical queue's lifecycle.
 
 `StateChanged` sends the current party snapshot to its members. Leaving sends `{ InParty = false }`. Snapshots include party ID, host user ID, access, capacity, state, member names/IDs/readiness, revision, countdown deadline, and last error. They never contain reserved access codes or admission tickets. Refresh the directory on demand; there is no continuous whole-server polling/broadcast.
 
@@ -85,20 +96,20 @@ States: `Open -> Countdown -> Preparing -> Teleporting`. Countdown can return to
 | `ReturnLobby` | none | Save/freeze this player and teleport to a public Lobby server |
 | `SetSetting` | `{ Key = "MasterVolume", Value = 0.8 }` | Allowlisted personal setting |
 
-The future UI should confirm leaving an active run before requesting `ReturnLobby`. No run rewards or penalties are invented by this foundation.
+The prototype UI confirms Lobby return on results. While enabled, it rejects mid-run return and waits for the caller's outcome to enter the profile before travel. Its server rules award personal contributed repairs and survival/death through the existing profile API; see the prototype guide for interrupted-party and replay behavior.
 
 ### Request protection
 
-All requests have a token bucket (burst eight, refill two per second), a maximum of four scalar payload fields, bounded strings, and finite-number checks. One yielding request per player may run at once. Create has a three-second cooldown; Start and ReturnLobby have ten-second cooldowns. The party service rechecks membership/host/capacity after the friendship lookup yields.
+All requests have a token bucket (burst eight, refill two per second), bounded strings, and finite-number checks. Ordinary requests allow four scalar payload fields; PrototypeAction allows six for the task-scoped puzzle input contract. One yielding request per player may run at once. Create has a three-second cooldown; Start and ReturnLobby have ten-second cooldowns. The party service rechecks membership/host/capacity after the friendship lookup yields.
 
-Common error codes include `DataNotReady`, `FriendsOnly`, `PartyChanged`, `MembersNotReady`, `HostOnly`, `TransferInProgress`, `RateLimited`, `RequestPending`, and `PleaseWait`. Startup in Studio returns `TeleportUnavailableInStudio` when attempting a transfer. Future UI should map codes to concise player-facing text.
+Common error codes include `DataNotReady`, `FriendsOnly`, `PartyChanged`, `MembersNotReady`, `HostOnly`, `TransferInProgress`, `RateLimited`, `RequestPending`, and `PleaseWait`. Studio defaults to a save/roster print preview and returns `StudioPreviewComplete` for queue recovery; it never teleports. If `StudioTeleportPreview` is disabled, attempts return `TeleportUnavailableInStudio`. Physical pad parties must be joined through server-observed entry, not the generic Join request.
 
 ## Private-server transfer and admission
 
 1. Freeze the roster after the ready countdown.
 2. Reserve a Game server. Access codes remain server-only.
 3. Freeze mutations and confirm a save for every member. Cancel before dispatch if a save fails or the roster changes.
-4. Write a five-minute MemoryStore admission record containing expected user IDs, source/destination place IDs, and the private-server ID.
+4. Write a five-minute MemoryStore admission record containing expected user IDs, the server-validated Story/Endless mode, source/destination place IDs, private-server ID, and GameData `{Version = 1, Mode, StartNight = 1, PartySize}`. Public teleport metadata may mirror GameData for presentation; authoritative settings always come from the ticket. Profiles travel through the save/load lease handoff, never as client-supplied teleport data.
 5. Send the group with `TeleportAsync` and the reserved access code. TeleportData contains only an opaque ticket ID and attempt ID, never a profile or reward claim.
 6. Keep the source profile leased and frozen while departure is pending. `PlayerRemoving` performs the final save/release; the destination waits for ownership instead of racing a source save.
 7. Game uses `Player:GetJoinData()` and an atomic MemoryStore claim. Verify source universe/place, target place/private-server ID, roster membership, expiry, and revocation. The first claim binds the ticket to one destination JobId.
@@ -108,7 +119,7 @@ Failures are per-player. Retry explicit transient failures at most three telepor
 
 If revocation storage is unavailable, keep the profile frozen and retry revocation until it succeeds or the ticket expires. An already claimed admission never thaws the old source session. A late teleport with revoked admission is rejected by the destination.
 
-Game waits up to 120 seconds after the first loaded member for the full party. If nobody has loaded, the initial load gate is bounded by the profile-load timeout plus ten seconds. A missing/revoked member makes the session Incomplete; departure from a Ready session makes it Interrupted. Future gameplay must check the **server API** `Session:IsReady()`, not trust replicated attributes.
+Game waits up to 120 seconds after the first loaded member for the full party. If nobody has loaded, the initial load gate is bounded by the profile-load timeout plus ten seconds. A missing/revoked initial member makes the session Incomplete. After Ready, departing members are removed while the remaining team continues; the empty session becomes Interrupted. A departed member cannot rejoin the started admission. Gameplay checks the **server API** `Session:IsReady()`, not replicated attributes.
 
 Roblox may place players with different cross-play settings into different server instances sharing a private-server ID. This implementation rejects a second JobId and blocks the incomplete run; it does not promise an atomic all-player teleport or silently run split parties. Use ReturnLobby to regroup after a failed arrival. [Reserved server API](https://create.roblox.com/docs/reference/engine/classes/TeleportService)
 
@@ -178,7 +189,7 @@ Outcome IDs prevent repeated grants within the latest 100 outcomes. This bounded
 
 ## Verification
 
-Run all three Lune suites and the Core parity check in `README.md`. Tests compile every Luau file, use mocked Roblox instances/services for integration, and use a cooperative scheduler for real coroutine interleavings in save/load/shutdown scenarios. They are local evidence, not a live Roblox certification.
+Run all five Lune suites and the Core parity check in `README.md`. Tests compile every Luau file, use mocked Roblox instances/services and authored/generated hierarchy fixtures, and use a cooperative scheduler for coroutine interleavings in save/load/shutdown scenarios. They are local evidence, not a live Roblox certification.
 
 Published checks still required:
 

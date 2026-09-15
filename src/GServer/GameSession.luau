@@ -2,20 +2,17 @@ local Session = {}
 Session.__index = Session
 
 function Session.new(services, config, data, tickets)
-	local self = setmetatable(
-		{
-			s = services,
-			config = config,
-			data = data,
-			tickets = tickets,
-			players = {},
-			expected = {},
-			state = "WaitingForParty",
-			nextRead = 0,
-			checking = false,
-		},
-		Session
-	)
+	local self = setmetatable({
+		s = services,
+		config = config,
+		data = data,
+		tickets = tickets,
+		players = {},
+		expected = {},
+		state = "WaitingForParty",
+		nextRead = 0,
+		checking = false,
+	}, Session)
 	local folder = Instance.new("Folder")
 	folder.Name = "DontPickUpGameSession"
 	assert(not services.ReplicatedStorage:FindFirstChild(folder.Name), "Duplicate GameSession")
@@ -39,15 +36,30 @@ function Session:_publish()
 	self.folder:SetAttribute("State", self.state)
 	self.folder:SetAttribute("ExpectedPlayers", expected)
 	self.folder:SetAttribute("LoadedPlayers", loaded)
+	self.folder:SetAttribute("Mode", self.mode or "Story")
 end
 
 function Session:Admit(player)
+	if self.players[player] ~= nil then
+		return true
+	end
+	local count = 0
+	for _ in pairs(self.players) do
+		count += 1
+	end
+	if count >= self.config.MaxPartySize then
+		return false, "PartyFull"
+	end
 	if self.s.RunService:IsStudio() and self.config.StudioAllowDirectGame then
 		self.practice = true
+		self.mode = self.config.StudioGameMode == "Endless" and "Endless" or "Story"
 		self.expected[tostring(player.UserId)] = true
 		self.players[player] = false
 		self:_publish()
 		return true
+	end
+	if self.state == "Ready" then
+		return false, "SessionAlreadyStarted"
 	end
 	local admission, reason = self.tickets:Claim(player)
 	if not admission then
@@ -60,6 +72,8 @@ function Session:Admit(player)
 		return false, "SessionClosed"
 	end
 	self.id = admission.Id
+	self.mode = admission.Ticket.Mode or "Story"
+	self.gameData = admission.Ticket.GameData and table.clone(admission.Ticket.GameData) or nil
 	for id in pairs(admission.Ticket.Members) do
 		self.expected[id] = true
 	end
@@ -86,7 +100,11 @@ function Session:Remove(player)
 	if self.practice then
 		self.expected[tostring(player.UserId)] = nil
 	elseif self.state == "Ready" then
-		self.state = "Interrupted"
+		-- Once the whole party has arrived, a departure must not kill friends' run.
+		self.expected[tostring(player.UserId)] = nil
+		if not next(self.players) then
+			self.state = "Interrupted"
+		end
 	end
 	self:_publish()
 end
@@ -96,6 +114,8 @@ function Session:Snapshot()
 		State = self.state,
 		ExpectedPlayers = self.folder:GetAttribute("ExpectedPlayers"),
 		LoadedPlayers = self.folder:GetAttribute("LoadedPlayers"),
+		Mode = self.mode or "Story",
+		GameData = self.gameData and table.clone(self.gameData) or nil,
 	}
 end
 

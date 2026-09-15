@@ -19,10 +19,13 @@ assert(
 	"Lobby bootstrap in wrong place"
 )
 local closing = false
-local data, travel, party, network
+local data, travel, party, network, world
 -- Register shutdown before player loading can yield.
 game:BindToClose(function()
 	closing = true
+	if world then
+		world:Shutdown()
+	end
 	if network then
 		network.closing = true
 	end
@@ -60,20 +63,30 @@ party = require(root.PartyService).new({
 		player:SetAttribute("DPU_PartyId", state and state.Id or nil)
 		player:SetAttribute("DPU_QueueStatus", state and state.State or "None")
 		network:Push(player, state)
+		if world then
+			world.queues:PartyChanged(player)
+		end
 	end,
 	canTravel = function()
-		if services.RunService:IsStudio() then
+		if services.RunService:IsStudio() and not Config.StudioTeleportPreview then
 			return false, "TeleportUnavailableInStudio"
 		end
 		return Config.GamePlaceId > 0 and Config.GamePlaceId ~= game.PlaceId, "PlaceNotConfigured"
 	end,
-	travel = function(roster, cancelled, finished)
-		return travel:Begin(roster, "Game", cancelled, finished)
+	travel = function(roster, cancelled, finished, options)
+		return travel:Begin(roster, "Game", cancelled, finished, options)
 	end,
 })
-require(root.Runtime).Set({ Data = data, Party = party, Travel = travel })
+world = require(root.QueueWorld).new(services, Config, data, party, network)
+require(root.Runtime).Set({ Data = data, Party = party, Travel = travel, Queues = world.queues })
 
 network:Bind(function(player, action, payload)
+	if action == "GetQueueState" then
+		return { Ok = true, Queue = world.queues:Get(player) }
+	end
+	if action == "QueueCreate" or action == "QueueLeave" then
+		return world.queues:Request(player, action, payload)
+	end
 	if action == "GetState" then
 		return {
 			Ok = true,
@@ -83,13 +96,33 @@ network:Bind(function(player, action, payload)
 		}
 	end
 	local ok, reason
+	if
+		world.queues.players[player] and table.find({ "Leave", "Ready", "Start", "Cancel", "Kick" }, action)
+	then
+		return { Ok = false, Code = "UseQueueControls" }
+	end
 	if action == "Create" then
-		ok, reason =
-			party:Create(player, payload.Capacity or Config.MaxPartySize, payload.Access or "Friends")
+		if world.queues.players[player] then
+			return { Ok = false, Code = "UseQueueCreate" }
+		end
+		ok, reason = party:Create(
+			player,
+			payload.Capacity or Config.MaxPartySize,
+			payload.Access or "Friends",
+			payload.Mode
+		)
 	elseif action == "Join" then
+		if world.queues.players[player] then
+			return { Ok = false, Code = "AlreadyQueued" }
+		end
+		for _, bay in pairs(world.queues.bays) do
+			if bay.PartyId == payload.PartyId then
+				return { Ok = false, Code = "UseQueueEntrance" }
+			end
+		end
 		ok, reason = party:Join(player, payload.PartyId)
 	elseif action == "Leave" then
-		ok, reason = party:Remove(player, false)
+		ok, reason = world.queues:Leave(player, false)
 	elseif action == "Ready" then
 		ok, reason = party:Ready(player, payload.Ready)
 	elseif action == "Start" then
@@ -107,6 +140,7 @@ network:Bind(function(player, action, payload)
 end)
 
 services.Players.PlayerRemoving:Connect(function(player)
+	world:Remove(player)
 	party:Remove(player, true)
 	travel:Remove(player)
 	network:Remove(player)
@@ -125,10 +159,15 @@ for _, player in ipairs(services.Players:GetPlayers()) do
 	end)
 end
 task.spawn(function()
+	local nextServices = 0
 	while not closing do
-		task.wait(1)
-		data:Tick()
-		party:Tick()
-		travel:Tick()
+		task.wait(0.25)
+		world:Tick()
+		if os.clock() >= nextServices then
+			nextServices = os.clock() + 1
+			data:Tick()
+			party:Tick()
+			travel:Tick()
+		end
 	end
 end)

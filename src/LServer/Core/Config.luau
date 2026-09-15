@@ -4,6 +4,11 @@ return table.freeze({
 	GamePlaceId = 111652489432168, -- Must be a published subplace of the Lobby's experience.
 	MaxPartySize = 4,
 	CountdownSeconds = 5,
+	QueueSetupSeconds = 20,
+	QueueGatherSeconds = 20,
+	QueueMaxDistance = 35,
+	WorldQueueAccess = "Public", -- Physical pads accept walk-in players; API parties also support Friends.
+	StudioTeleportPreview = true, -- Validate/save/print, then exit the pad; never call TeleportService in Studio.
 	PartyIdleSeconds = 600,
 	TeleportAttempts = 3,
 	TeleportWatchdogSeconds = 45,
@@ -17,4 +22,5 @@ return table.freeze({
 	MutationLeaseMargin = 40,
 	StudioSaving = false, -- false: in-memory practice; true: isolated _STUDIO store.
 	StudioAllowDirectGame = true, -- Studio only; published Game always requires admission.
+	StudioGameMode = "Story", -- Change to Endless to preview that mode without a teleport.
 })

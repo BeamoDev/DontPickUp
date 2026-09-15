@@ -1,0 +1,21 @@
+# Normalize source and documentation across Windows and GitHub.
+* text=auto
+*.lua text eol=lf
+*.luau text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+*.ps1 text eol=crlf
+
+# Preserve authored binary assets if they are added later.
+*.rbxm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ogg binary
+*.mp3 binary
+*.wav binary

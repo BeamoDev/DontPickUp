@@ -67,6 +67,75 @@ function World.new(services, config)
 		return part(folder, name, size, self.origin * CFrame.new(position), color, material)
 	end
 	self.stations.Shelter = ShopLayout.Build(p, sign)
+	local employeeBoard = p(
+		"EmployeeBoard",
+		Vector3.new(12, 6, 0.2),
+		Vector3.new(0, 6.5, 7.65),
+		Color3.fromRGB(43, 47, 39),
+		Enum.Material.Wood
+	)
+	employeeBoard.CanCollide = false
+	local boardGui = Instance.new("SurfaceGui")
+	boardGui.Name = "EmployeeStatus"
+	boardGui.Face = Enum.NormalId.Front
+	boardGui.LightInfluence = 0.5
+	boardGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	boardGui.PixelsPerStud = 50
+	boardGui.Parent = employeeBoard
+	local boardTitle = Instance.new("TextLabel")
+	boardTitle.Name = "Title"
+	boardTitle.Size = UDim2.new(1, -20, 0, 50)
+	boardTitle.Position = UDim2.fromOffset(10, 8)
+	boardTitle.BackgroundTransparency = 1
+	boardTitle.Text = "MINISTRY DEVICE SERVICES / NIGHT STAFF"
+	boardTitle.TextColor3 = PAPER
+	boardTitle.Font = Enum.Font.Code
+	boardTitle.TextSize = 21
+	boardTitle.TextWrapped = true
+	boardTitle.Parent = boardGui
+	self.employeeBoardSlots = {}
+	for index = 1, 4 do
+		local portrait = Instance.new("ImageLabel")
+		portrait.Name = "Portrait" .. index
+		portrait.Position = UDim2.fromOffset(14, 56 + (index - 1) * 58)
+		portrait.Size = UDim2.fromOffset(50, 50)
+		portrait.BackgroundColor3 = Color3.fromRGB(28, 30, 26)
+		portrait.BorderSizePixel = 0
+		portrait.Visible = false
+		portrait.Parent = boardGui
+		local employee = Instance.new("TextLabel")
+		employee.Name = "Employee" .. index
+		employee.Position = UDim2.fromOffset(76, 56 + (index - 1) * 58)
+		employee.Size = UDim2.new(1, -88, 0, 50)
+		employee.BackgroundTransparency = 1
+		employee.Text = ""
+		employee.TextColor3 = PAPER
+		employee.Font = Enum.Font.Code
+		employee.TextSize = 17
+		employee.TextWrapped = true
+		employee.TextXAlignment = Enum.TextXAlignment.Left
+		employee.TextYAlignment = Enum.TextYAlignment.Center
+		employee.Visible = false
+		employee.Parent = boardGui
+		table.insert(self.employeeBoardSlots, { Portrait = portrait, Text = employee })
+	end
+	self.voteMarkers = {}
+	for index, choice in ipairs({ "REPORT", "HIDE", "INVESTIGATE" }) do
+		local markerPart = p(
+			"Vote" .. choice,
+			Vector3.new(4.5, 0.08, 2.8),
+			Vector3.new(-6 + (index - 1) * 6, 0.24, 5),
+			index == 1 and Color3.fromRGB(80, 102, 72)
+				or index == 2 and Color3.fromRGB(106, 90, 62)
+				or Color3.fromRGB(91, 72, 101),
+			Enum.Material.Neon
+		)
+		markerPart.CanCollide, markerPart.CanTouch, markerPart.CanQuery = false, false, false
+		markerPart.Transparency = 1
+		local markerLabel = sign(markerPart, choice, Vector3.new(0, 1.2, 0))
+		markerLabel.Parent.Enabled = false
+		table.insert(self.voteMarkers, { Part = markerPart, Label = markerLabel.Parent })
+	end
 	local stationSpecs = {
 		Tools = { Vector3.new(-8.5, 3.35, 0), Vector3.new(1.2, 0.5, 1.4), "REPAIR KIT" },
 		Tool_BrassKey = { Vector3.new(19, 0.55, -17), Vector3.new(0.4, 0.15, 0.8), "Small brass key" },
@@ -519,6 +588,9 @@ function World:Render(run)
 		tostring(run.stock.Speaker or 0),
 		tostring(run.stock.Keypad or 0),
 	}, ":")
+	for player, member in pairs(run.players) do
+		visualKey ..= ":" .. tostring(player.UserId) .. ":" .. tostring(member.Alive) .. ":" .. tostring(member.Signal or "")
+	end
 	local second = run.stations.Bench2
 	visualKey ..= ":" .. table.concat({
 		second.order and second.order.Id or "",
@@ -531,6 +603,32 @@ function World:Render(run)
 		return
 	end
 	self.visualKey = visualKey
+	local reportsByUser = {}
+	for _, report in ipairs(run.employeeReports or {}) do
+		reportsByUser[report.UserId] = report
+	end
+	local sortedPlayers = {}
+	for player in pairs(run.players) do
+		table.insert(sortedPlayers, player)
+	end
+	table.sort(sortedPlayers, function(a, b)
+		return a.UserId < b.UserId
+	end)
+	for index, slot in ipairs(self.employeeBoardSlots) do
+		local player = sortedPlayers[index]
+		slot.Portrait.Visible, slot.Text.Visible = player ~= nil, player ~= nil
+		if player then
+			local member, report = run.players[player], reportsByUser[player.UserId]
+			local status = not member.Alive and "TRANSFERRED" or report and report.Status or "PROBATIONARY"
+			slot.Portrait.Image = "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150"
+			slot.Text.Text = player.DisplayName .. "  /  " .. status .. (member.Signal and "\n> " .. member.Signal or "")
+		end
+	end
+	local voteVisible = Stations.Voting(run) ~= nil
+	for _, marker in ipairs(self.voteMarkers) do
+		marker.Part.Transparency = voteVisible and 0.2 or 1
+		marker.Label.Enabled = voteVisible
+	end
 	if self.doorOpen ~= (run.doorOpen == true) then
 		local first = self.doorOpen == nil
 		self.doorOpen = run.doorOpen == true

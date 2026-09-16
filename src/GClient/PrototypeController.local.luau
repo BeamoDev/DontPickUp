@@ -98,6 +98,7 @@ local firstPerson = FirstPersonCamera.new(view.gui, player, game:GetService("Use
 	end,
 	needsPointer = function()
 		return view.modal.Visible
+			or view.signalMenu.Visible
 			or state.Seated == true
 			or state.Fax ~= nil
 			or state.Focus ~= nil

@@ -26,6 +26,10 @@ function Methods:_newOrder(tutorial, lane)
 		end
 	end
 	local job = Catalog.Job(source, self.d.random or math.random, tutorial, self.night)
+	local employeeReport
+	if not tutorial and self.night >= 2 and #self.employeeReports > 0 and self.serial % 3 == 0 then
+		employeeReport = self.employeeReports[(self.serial - 1) % #self.employeeReports + 1]
+	end
 	lane.order = {
 		Id = tostring(self.serial),
 		Ticket = Pickup.Issue(self),
@@ -51,6 +55,7 @@ function Methods:_newOrder(tutorial, lane)
 		ArrivesAt = self.d.clock() + self.c.ArrivalSeconds,
 		Tutorial = tutorial,
 		PuzzleSeed = tutorial and 1 or (self.d.random or math.random)(1, 1000000),
+		EmployeeReport = employeeReport,
 	}
 	self:_publish()
 end

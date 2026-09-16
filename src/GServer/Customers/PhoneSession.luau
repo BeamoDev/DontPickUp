@@ -16,6 +16,7 @@ function Phone.New(order, night)
 		Answered = 0,
 		Violations = 0,
 		Installed = false,
+		EmployeeReport = order.EmployeeReport,
 	}
 end
 local function menu(p)
@@ -66,7 +67,17 @@ local function menu(p)
 				or "Oh! Please tell them their family is waiting. Good luck fixing that old thing.",
 			{ "HANG UP" }
 	elseif page == "Recordings" then
-		return "RECORDINGS", "A personal voice memo is stored on this phone.", { "PLAY RECORDING", "BACK" }
+		return "RECORDINGS", "A personal voice memo is stored on this phone.", {
+			p.EmployeeReport and "EMPLOYEE FILE" or "PLAY RECORDING",
+			"BACK",
+		}
+	elseif page == "EmployeeFile" then
+		local report = p.EmployeeReport
+		return "CIVIC WATCH / EMPLOYEE REVIEW",
+			"EMPLOYEE: " .. report.Employee .. "\nSTATUS: " .. report.Status .. "\n\nOBSERVED:\n- "
+				.. table.concat(report.Observed, "\n- ")
+				.. "\n\n" .. report.Notice,
+			{ "BACK", "HOME" }
 	elseif page == "Recording" then
 		return "VOICE MEMO / TRANSCRIPT",
 			"Remember: collect the ration cards, repair the radio, call home before curfew. Don't forget the bread this time.",
@@ -100,7 +111,11 @@ function Phone.Snapshot(p)
 end
 function Phone.ReadPage(p)
 	if
-		(p.Page == "MessageHome" or p.Page == "MessageSaved" or p.Page == "Recording" or p.Page == "Archive")
+		(p.Page == "MessageHome"
+			or p.Page == "MessageSaved"
+			or p.Page == "Recording"
+			or p.Page == "EmployeeFile"
+			or p.Page == "Archive")
 		and not p.Seen[p.Page]
 	then
 		p.Seen[p.Page] = true
@@ -170,8 +185,8 @@ function Phone.Input(p, move, revision, now)
 	elseif page == "CallWork" or page == "Reply" then
 		p.Page = "Contacts"
 	elseif page == "Recordings" then
-		p.Page = move == 1 and "Recording" or "Home"
-	elseif page == "Recording" then
+		p.Page = move == 1 and (p.EmployeeReport and "EmployeeFile" or "Recording") or "Home"
+	elseif page == "Recording" or page == "EmployeeFile" then
 		p.Page = move == 1 and "Recordings" or "Home"
 	elseif page == "Ringing" then
 		p.Page = move == 1 and "CallHome" or "Home"

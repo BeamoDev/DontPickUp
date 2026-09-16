@@ -45,6 +45,7 @@ local ERRORS = {
 	NotReady = "Wait for your progress to be recorded.",
 	VoteClosed = "Voting has ended.",
 	ConnectionError = "The server is taking longer than usual. Try again shortly.",
+	InvalidSignal = "Choose one of the approved team messages.",
 	StudioPreviewComplete = "Studio return check passed. A published game would send you to the lobby.",
 }
 
@@ -150,6 +151,23 @@ function View.new(playerGui, actions)
 			self.actions.act(action)
 		end
 	end)
+	self.signal = button(self.top, "Signal", "TEAM", UDim2.new(0.62, 0, 0, 8), UDim2.new(0.09, 0, 0, 40), function()
+		self.signalsOpen = not self.signalsOpen
+		self:Render()
+	end)
+	self.signal.TextSize = 12
+	self.signalMenu = frame(self.gui, "TeamSignals", UDim2.new(0.5, 0, 0, 72), UDim2.new(0.94, 0, 0, 164))
+	self.signalMenu.AnchorPoint = Vector2.new(0.5, 0)
+	create("UISizeConstraint", self.signalMenu, { MaxSize = Vector2.new(620, 164) })
+	self.signalButtons = {}
+	local signals = { "Parts", "Phone", "Inside", "NoAnswer", "Ticket", "Why" }
+	for index, key in ipairs(signals) do
+		local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
+		self.signalButtons[key] = button(self.signalMenu, key, key, UDim2.new(column * 0.5, 8, 0, 8 + row * 50), UDim2.new(0.5, -16, 0, 42), function()
+			self.signalsOpen = false
+			self.actions.act("Signal", key)
+		end)
+	end
 	self.modal = frame(self.gui, "Briefing", UDim2.fromScale(0.08, 0.22), UDim2.fromScale(0.84, 0.58))
 	self.modal.ZIndex = 5
 	self.modalTitle = label(self.modal, "Title", UDim2.fromOffset(16, 12), UDim2.new(1, -32, 0, 40), 23, ACCENT)
@@ -491,6 +509,7 @@ function View:Render()
 		)
 	if focused or state.Event or ending or outsideWarning then
 		self.rulesOpen = false
+		self.signalsOpen = false
 	end
 	local rules = not ending and not vote and not state.Event and (state.NeedsRules or self.rulesOpen)
 	local intro = not ending
@@ -508,6 +527,11 @@ function View:Render()
 	self.modal.Visible = self.confirmAnswer ~= nil or intro or ending or vote ~= nil and vote ~= false or rules == true
 	self.top.Visible = not self.modal.Visible and not focused
 	self.bottom.Visible = not self.modal.Visible and not focused
+	self.signalMenu.Visible = self.signalsOpen == true and self.top.Visible and state.Alive == true
+	for key, signalButton in pairs(self.signalButtons) do
+		signalButton.Text = state.Signals and state.Signals[key] or key
+		signalButton.Active = not self.busy
+	end
 	-- Keep urgent feedback, but don't repeat hazard instructions in two cards.
 	self.warning.Visible = warning ~= nil
 		and (hasError == true or outsideWarning ~= nil or injury ~= nil or (not focused and not self.modal.Visible))
@@ -581,6 +605,12 @@ function View:Render()
 				.. self.modalText.Text
 		end
 		self.modalText.Text ..= "\n\nPHONE LOG: " .. (state.PhoneReads or 0) .. " records read / " .. (state.PhoneCalls or 0) .. " private calls / " .. (state.RuleBreaks or 0) .. " rule breaks.\nWAGES: 10 credits per completed repair + 50 for surviving. Paid once when this night is recorded."
+		if state.Awards and #state.Awards > 0 then
+			self.modalText.Text ..= "\n\nEMPLOYEE AWARDS"
+			for _, award in ipairs(state.Awards) do
+				self.modalText.Text ..= "\n" .. award.Title .. " — " .. award.Name .. "\n" .. award.Detail
+			end
+		end
 	elseif intro then
 		self.modalTitle.Text, self.modalText.Text = state.Intro.Title, state.Intro.Text
 	elseif vote then
@@ -603,6 +633,13 @@ function View:Render()
 				.. self.rosterDetails
 				.. "\n\nTONIGHT'S RULES\n"
 				.. self.modalText.Text
+			local reportLines = {}
+			for _, report in ipairs(state.EmployeeReports or {}) do
+				table.insert(reportLines, report.Employee .. " / " .. report.Status)
+			end
+			local handbook = state.Handbook or {}
+			self.modalText.Text ..= "\n\nEMPLOYEE REVIEW\n" .. (#reportLines > 0 and table.concat(reportLines, "\n\n") or "No prior review on file.")
+				.. "\n\nEMPLOYEE HANDBOOK\nCustomers " .. (handbook.Customers or 0) .. " / Anomalies " .. (handbook.Anomalies or 0) .. " / Stamps " .. (handbook.Stamps or 0)
 		end
 	end
 end

@@ -1,6 +1,7 @@
 -- Customer collection is independent of the disconnected shop-phone hazard.
 local Pickup = {}
 local Stations = require(script.Parent.Parent.Repair.RepairStations)
+local Engagement = require(script.Parent.Parent.Services.EngagementService)
 
 function Pickup.Issue(run)
 	-- Server-lifetime sequence survives new nights/runs. Never collide with an active ticket.
@@ -70,6 +71,7 @@ function Pickup.Dial(run, player, payload)
 				return false, "PhoneNotReady"
 			end
 			order.Step, order.PickupAt = "PickupArriving", now + run.c.ArrivalSeconds
+			Engagement.Add(member, "FaxCalls")
 			member.Fax.Message = "Called " .. order.Customer .. ". They are on the way!"
 			run:_say(order.Customer, "My phone is ready? Thanks! I'll come pick it up.")
 			run:_publish()

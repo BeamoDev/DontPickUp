@@ -3,6 +3,7 @@ local Methods = {}
 local Stations = require(script.Parent.Parent.Repair.RepairStations)
 local Director = require(script.Parent.EventDirector)
 local OutdoorRisk = require(script.Parent.OutdoorRisk)
+local Engagement = require(script.Parent.Parent.Services.EngagementService)
 function Methods:_scare(player, kind, announced, impact)
 	local member, now = self.players[player], self.d.clock()
 	impact = impact
@@ -118,6 +119,8 @@ function Methods:_tickOutside(now)
 					{ Damage = damage, Reason = "You stayed outside after the footsteps warning" }
 				)
 			elseif transition == "Escaped" then
+				Engagement.Add(member, "WarningsEscaped")
+				Engagement.Unlock(member, "Anomalies", "outdoor_footsteps")
 				member.PersonalNotice, member.PersonalNoticeUntil =
 					"The footsteps stop at the door. You made it inside.", now + 6
 				if self.d.debug then

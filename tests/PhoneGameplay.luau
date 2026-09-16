@@ -73,6 +73,29 @@ do
 		"ignore ends call without snooping"
 	)
 end
+do
+	local employeeOrder = {
+		Customer = "Ordinary",
+		PuzzleSeed = 1,
+		EmployeeReport = {
+			Employee = "Test Worker",
+			Status = "UNDER REVIEW",
+			Observed = { "OPENED 2 PRIVATE RECORDS", "PREDICTION: WILL ANSWER TOMORROW" },
+			Notice = "FICTIONAL FILE / IN-SHIFT ACTIONS ONLY",
+		},
+	}
+	local p = Phone.New(employeeOrder, 3)
+	check(not Phone.Snapshot(p).Hint:find("Test Worker", 1, true), "unopened employee file stays private")
+	check(Phone.Input(p, 4, p.Revision, 0), "open recordings menu")
+	check(not Phone.Snapshot(p).Hint:find("Test Worker", 1, true), "recordings menu does not replicate employee file")
+	check(Phone.Input(p, 1, p.Revision, 0), "deliberately open employee review")
+	local snapshot = Phone.Snapshot(p)
+	check(snapshot.Hint:find("Test Worker", 1, true), "opened employee review shows current worker")
+	check(snapshot.Hint:find("IN%-SHIFT"), "employee review states its fictional data boundary")
+	check(p.Reads == 1 and p.Violations == 1, "employee review logs one prohibited private read")
+	check(Phone.Input(p, 1, p.Revision, 0) and Phone.Input(p, 1, p.Revision, 0), "employee review can be reopened")
+	check(p.Reads == 1 and p.Violations == 1, "reopened employee review stays idempotent")
+end
 -- Full authority path: two-person choice, ownership, interruptions and continued phone access.
 do
 	local f = Fixture(2, check)

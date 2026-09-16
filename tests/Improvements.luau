@@ -327,6 +327,8 @@ do
 	local state = { RunId = "run", Order = { Id = "second" }, Vote = { OrderId = "first" } }
 	local _, payload = Requests.Payload(state, "Vote", "Hide")
 	check(payload.OrderId == "first", "vote request uses shared vote order rather than own repair")
+	local _, signalPayload = Requests.Payload(state, "Signal", "Inside")
+	check(signalPayload.Signal == "Inside" and signalPayload.Choice == nil, "preset signal sends only its allowlisted key")
 	local _, restock = Requests.Payload(state, "PuzzleInput", { WorkId = "crate", Move = 11, PuzzleRevision = 0 })
 	check(restock.OrderId == nil, "restock inputs never inherit active customer order")
 	local calls = {}

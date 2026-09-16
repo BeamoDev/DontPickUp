@@ -2,6 +2,8 @@
 
 ## Player experience
 
+**Roblox-native team recognition:** `GServer/Services/EngagementService` records a small allowlist of meaningful in-run actions for presentation. It creates fictional CIVIC WATCH employee reviews, selects at most four non-duplicated funny night awards, maintains run-local handbook totals and validates six cooldown-protected preset team callouts. It never reads chat, profile payloads or external account activity. Later-night phones may expose one employee review in place of an ordinary recording; unopened observations remain server-side. The generated shop and SHIFT INFO receive only each employee's public Ministry status, while detailed observations appear only on the deliberately opened phone page. These collections are intentionally run-local cosmetics, not a new saved economy or client reward path.
+
 **Phone use / five-night release scope:** Install work now opens a server-owned customer phone menu with six reusable Shared softkeys. Connect the cartridge, wait for the server's two-second copy deadline, then check installation of CIVIC WATCH. Optional messages/recordings disclose only opened content. Contact calls and incoming ANSWER/IGNORE calls have text dialogue; taking a family message changes pickup dialogue. Asking to skip installation uses the existing team-vote rules, with explicit install/skip/investigate consequences. Browsing is optional and most phones contain ordinary records. A deliberately opened clue enters the team vote on finishing; investigation reopens its recovered record. The six-digit shop fax pickup flow stays separate.
 
 Story has five chapter-specific nights. Night one allows testing/browsing; night two bans private records; night three onward bans private calls as well. Violations raise suspicion and affect inspection feedback; the summary shows record reads, private calls and violations. Calls do not cause the disconnected-phone hazard's damage or ending. This uses prototype text content, not recorded speech or a completed authored campaign.
@@ -46,6 +48,7 @@ src/
     Bootstrap.server.luau, Runtime.luau
     Core/                 identical independent-place deployment copy
     Services/             admission, prototype adapter, dialogue sequencing
+                          and server-owned social recognition
     Shifts/               lifecycle, actions, snapshots, mode/ending rules, tuning
     Repair/               per-bench orders, puzzles, seats, Tools, templates
     Customers/            private customer catalog and authored conversations

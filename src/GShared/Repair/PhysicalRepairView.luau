@@ -1,5 +1,5 @@
 -- Local 3D task pieces. Only completed gestures send revision-scoped puzzle moves.
-local Tasks = require(script.Parent.PhysicalRepairTasks)
+local Tasks = require(script.Parent:WaitForChild("PhysicalRepairTasks", 30))
 local View = {}
 View.__index = View
 local function make(class, parent, props)
@@ -164,7 +164,7 @@ function View:_wire(node)
 	local finish = node.Part.CFrame.Position
 	local length = (finish - start).Magnitude
 	if length > 0.01 then
-		node.Wire.Size = Vector3.new(0.06, 0.06, length)
+		node.Wire.Size = Vector3.new(node.WireThicknessX or 0.06, node.WireThicknessY or 0.06, length)
 		node.Wire.CFrame = CFrame.lookAt((start + finish) / 2, finish)
 	end
 end
@@ -355,15 +355,26 @@ function View:_sync(puzzle)
 			node = { Part = part, Label = label }
 			self.nodes[spec.Id] = node
 			if spec.Wire then
-				node.Wire = make("Part", self.folder, {
-					Name = spec.Id .. "Cable",
-					Anchored = true,
-					CanCollide = false,
-					CanTouch = false,
-					CanQuery = false,
-					CastShadow = false,
-					Color = spec.Color,
-				})
+				local templates = self.d.storage and self.d.storage:FindFirstChild("DontPickUpTemplates")
+				local template = templates and templates:FindFirstChild("RepairWire")
+				if template and template:IsA("BasePart") then
+					node.Wire = template:Clone()
+					node.Wire.Name, node.Wire.Parent = spec.Id .. "Cable", self.folder
+					node.Wire.Anchored, node.Wire.CanCollide, node.Wire.CanTouch, node.Wire.CanQuery =
+						true, false, false, false
+					node.WireThicknessX, node.WireThicknessY = template.Size.X, template.Size.Y
+					node.Wire.Color = spec.Color
+				else
+					node.Wire = make("Part", self.folder, {
+						Name = spec.Id .. "Cable",
+						Anchored = true,
+						CanCollide = false,
+						CanTouch = false,
+						CanQuery = false,
+						CastShadow = false,
+						Color = spec.Color,
+					})
+				end
 			end
 		end
 		local wasDone = node.Spec and node.Spec.Done

@@ -1,5 +1,7 @@
 -- Methods operate on the owning shift; no module-global gameplay state.
 local Methods = {}
+local Phone = require(script.Parent.Parent.Customers.PhoneSession)
+local Pickup = require(script.Parent.Parent.Customers.PickupService)
 local Stations = require(script.Parent.Parent.Repair.RepairStations)
 local Puzzles = require(script.Parent.Parent.Repair.WorkPuzzles)
 local Lore = require(script.Parent.Parent.Lore.LoreService)
@@ -17,6 +19,13 @@ function Methods:Action(player, action, payload)
 	local lane = Stations.ForPlayer(self, player)
 	if self.closing or not member or not self.d.present(player) then
 		return false, "NotAdmitted"
+	end
+	if action == "CloseFax" then
+		if member.Fax and payload.FaxId == member.Fax.Id then
+			member.Fax = nil
+			self:_publish()
+		end
+		return true
 	end
 	if action == "CloseInspection" then
 		return Lore.Close(self, member, payload.InspectionId)
@@ -151,6 +160,9 @@ function Methods:Action(player, action, payload)
 	if not member.Acknowledged then
 		return false, "ReadRules"
 	end
+	if action == "Return" or action == "TakeOrder" then
+		lane = Stations.ForOrder(self, payload.OrderId) or lane
+	end
 	if action == "Vote" then
 		lane = Stations.ForOrder(self, payload.OrderId) or lane
 	end
@@ -204,6 +216,11 @@ function Methods:Action(player, action, payload)
 		return false, "PleaseWait"
 	end
 	member.NextAction = self.d.clock() + (action == "PuzzleInput" and 0.12 or 0.5)
+	if action == "OpenFax" then
+		return Pickup.Open(self, player)
+	elseif action == "DialTicket" then
+		return Pickup.Dial(self, player, payload)
+	end
 	if action == "PuzzleInput" then
 		local work = lane.work
 		if
@@ -229,9 +246,19 @@ function Methods:Action(player, action, payload)
 		if order and order.ExpiresAt and not order.PausedAt and self.d.clock() >= order.ExpiresAt then
 			return false, "OrderChanged"
 		end
+		local beforeViolations = work.Puzzle.Kind == "Phone" and work.Puzzle.Violations or 0
+		local beforeReads = work.Puzzle.Kind == "Phone" and work.Puzzle.Reads or 0
+		local beforeCalls = work.Puzzle.Kind == "Phone" and (work.Puzzle.Calls + work.Puzzle.Answered) or 0
 		local ok, solved, code = Puzzles.Input(work.Puzzle, payload.Move, payload.PuzzleRevision, self.d.clock())
 		if not ok then
 			return false, code
+		end
+		if work.Puzzle.Kind == "Phone" then
+			local p = work.Puzzle
+			self.phoneReads = (self.phoneReads or 0) + p.Reads - beforeReads
+			self.phoneCalls = (self.phoneCalls or 0) + p.Calls + p.Answered - beforeCalls
+			self.ruleBreaks = (self.ruleBreaks or 0) + p.Violations - beforeViolations
+			self.suspicion = math.min(100, self.suspicion + (p.Violations - beforeViolations) * 2)
 		end
 		if work.Action == "Secure" and order and work.Puzzle.Kind == "Screws" then
 			order.Contacts = work.Puzzle.Progress
@@ -259,9 +286,17 @@ function Methods:Action(player, action, payload)
 			self:_notice("It said your name. You were told not to pick up.")
 			self:Damage(player, 40, "Answered the disconnected phone")
 		elseif action == "Records" then
-			self:_say("Inspector", "Your records are in order. Keep working. We will be back.")
-			self:_notice("The inspector accepts the repair log and leaves.")
-			self.suspicion = math.max(0, self.suspicion - 10)
+			self:_say(
+				"Inspector",
+				(self.ruleBreaks or 0) > 0
+						and ("We logged " .. self.ruleBreaks .. " rule breaks. Private calls and files are not yours. Your work is under review.")
+					or "Your records are in order. Keep working. We will be back."
+			)
+			self:_notice(
+				(self.ruleBreaks or 0) > 0 and "The inspector found rule breaks in the phone log."
+					or "The inspector accepts the repair log and leaves."
+			)
+			self.suspicion = math.clamp(self.suspicion + ((self.ruleBreaks or 0) > 0 and 10 or -10), 0, 100)
 		else
 			self:_notice(action == "Silence" and "The line goes quiet." or "Power restored. Something moved outside.")
 		end
@@ -283,6 +318,8 @@ function Methods:Action(player, action, payload)
 			or order.Step == "Arriving"
 			or order.Step == "Waiting"
 			or order.Step == "Return"
+			or order.Step == "ReadyForPickup"
+			or order.Step == "PickupArriving"
 		then
 			return false, "WrongStep"
 		end
@@ -344,7 +381,16 @@ function Methods:Action(player, action, payload)
 	elseif not order or payload.OrderId ~= order.Id then
 		return false, "OrderChanged"
 	elseif action == "TakeOrder" and order.Step == "Waiting" then
+		if member.CarriedPart then
+			return false, "DepositFirst"
+		end
+		Stations.CancelPlayer(self, player)
+		self.d.stand(player)
+		member.StationId = lane.Id
 		order.Step = "Diagnose"
+		self:_notice(
+			"Phone dropped off. Ticket " .. order.Ticket .. ". Call this code on the fax phone when it is ready."
+		)
 		order.Contributors[player] = true
 		self:_converse(Conversations.Intake(order, player))
 	elseif action == "Return" and order.Step == "Return" then
@@ -426,6 +472,21 @@ function Methods:Action(player, action, payload)
 				not easy,
 				easy
 			)
+			if action == "Install" then
+				order.Phone = order.Phone or Phone.New(order, self.night)
+				local beforeReads, beforeViolations = order.Phone.Reads, order.Phone.Violations
+				Phone.ReadPage(order.Phone)
+				self.phoneReads = (self.phoneReads or 0) + order.Phone.Reads - beforeReads
+				self.ruleBreaks = (self.ruleBreaks or 0) + order.Phone.Violations - beforeViolations
+				self.suspicion = math.min(100, self.suspicion + (order.Phone.Violations - beforeViolations) * 2)
+				if order.Phone.Page == "Archive" and order.Evidence then
+					for _, living in ipairs(self:_living()) do
+						self.d.evidence(living, order.Evidence.Id)
+					end
+				end
+				order.Phone.Revision += 1 -- Obsolete work inputs cannot carry into a reopened phone.
+				lane.work.Puzzle = order.Phone
+			end
 			lane.work.EndsAt = self.d.clock() + self.c.PuzzleTimeout
 		end
 	end

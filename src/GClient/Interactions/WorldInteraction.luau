@@ -94,11 +94,45 @@ function Interaction:Activate(position)
 		self.d.send("Interact", { Station = item:GetAttribute("DPU_Direct") })
 	end
 end
+
+function Interaction:CanHover(item, state)
+	local station = item:GetAttribute("DPU_Direct")
+	if station == "Timeclock" then
+		return state.NeedsClockIn == true
+	end
+	if state.NeedsClockIn then
+		return false
+	end
+	if station == "Fax" then
+		return not state.NeedsRules and not state.Event
+	end
+	if station == "Tools" then
+		local kit = state.Kit or {}
+		return not (kit.Tester and kit.Screwdriver and kit.Cartridge)
+	elseif station == "Tool_BrassKey" then
+		return not (state.Kit and state.Kit.BrassKey)
+	end
+	local part = station and station:match("^Part_(.+)$")
+	if part then
+		local order = state.Order
+		return not state.NeedsRules
+			and not state.Event
+			and not state.Work
+			and not state.CarriedPart
+			and order ~= nil
+			and order.Step == "Collect"
+			and order.Fault == part
+			and (state.Stock and state.Stock[part] or 0) > 0
+	end
+	return true
+end
+
 function Interaction:Update(state, blocked)
 	self.blocked = blocked
 		or not state.Alive
 		or state.Seated
 		or state.Focus
+		or state.Fax
 		or state.Inspection
 		or state.Phase == "Results"
 	if self.blocked then
@@ -107,6 +141,7 @@ function Interaction:Update(state, blocked)
 	local gamepad = self.d.input:GetLastInputType().Name:match("^Gamepad") ~= nil
 	local pointer = not gamepad and self.d.input:GetMouseLocation() or nil
 	local item = not self.blocked and self:Pick(pointer) or nil
+	self.hovered = item ~= nil and self:CanHover(item, state) == true
 	self.highlight.Enabled, self.highlight.Adornee = item ~= nil, item
 	self.hint.Visible = item ~= nil
 	if item then
@@ -115,6 +150,7 @@ function Interaction:Update(state, blocked)
 	end
 end
 function Interaction:Destroy()
+	self.hovered = false
 	for _, connection in ipairs(self.connections) do
 		connection:Disconnect()
 	end

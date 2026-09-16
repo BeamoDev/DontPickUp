@@ -1,6 +1,8 @@
 local QueueService = require(script.Parent.WorldQueueService)
-local Geometry = require(script.Parent.QueueGeometry)
-local Billboard = require(script.Parent.QueueBillboard)
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("LShared", 30)
+assert(Shared, "Sync src/LShared to ReplicatedStorage.LShared in the Lobby place")
+local Geometry = require(Shared:WaitForChild("Geometry", 30):WaitForChild("QueueGeometry", 30))
+local Billboard = require(Shared:WaitForChild("UI", 30):WaitForChild("QueueBillboard", 30))
 local World = {}
 World.__index = World
 

@@ -1,6 +1,9 @@
 -- Discrete, authoritative task rules. Pointer movement never reaches the server.
 local Tasks = {}
-local KINDS = { Probes = true, BatteryFit = true, Wires = true, Circuit = true, Dials = true, Memory = true }
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("GShared", 30)
+assert(Shared, "Sync src/GShared to ReplicatedStorage.GShared in the Game place")
+local Public = require(Shared:WaitForChild("Repair", 30):WaitForChild("Definitions", 30))
+local KINDS = Public.TaskKinds
 local function numbers(seed, count, choices)
 	local result, value = {}, seed % 2147483646 + 1
 	for i = 1, count do
@@ -35,9 +38,14 @@ function Tasks.New(action, fault, seed, length, now)
 				or "Match each battery to the same label. Drag it, or tap both spaces."
 		)
 		puzzle.Slots, puzzle.Placed = { 1, 2, 3 }, { false, false, false }
-		local rolls = numbers(seed + 17, 2, 6)
-		for i = 3, 2, -1 do
-			local other = rolls[4 - i] % i + 1
+		if wire then
+			table.insert(puzzle.Slots, 4)
+			table.insert(puzzle.Placed, false)
+		end
+		local count = #puzzle.Slots
+		local rolls = numbers(seed + 17, count - 1, 6)
+		for i = count, 2, -1 do
+			local other = rolls[count + 1 - i] % i + 1
 			puzzle.Slots[i], puzzle.Slots[other] = puzzle.Slots[other], puzzle.Slots[i]
 		end
 	elseif action == "Repair" then
@@ -92,13 +100,13 @@ function Tasks.Input(puzzle, move, revision, now)
 		end
 	elseif puzzle.Kind == "Wires" or puzzle.Kind == "BatteryFit" then
 		local item, slot = math.floor(move / 10), move % 10
-		if item < 1 or item > 3 or slot < 1 or slot > 3 or puzzle.Placed[item] then
+		if item < 1 or item > #puzzle.Slots or slot < 1 or slot > #puzzle.Slots or puzzle.Placed[item] then
 			return false, false, "InvalidInput"
 		end
 		if puzzle.Slots[slot] == item then
 			puzzle.Placed[item] = true
 			puzzle.Progress += 1
-			solved = puzzle.Progress == 3
+			solved = puzzle.Progress == #puzzle.Slots
 		else
 			wrong = true
 		end

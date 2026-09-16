@@ -7,7 +7,8 @@ Current folder deployment and latest controls are defined in [CURRENT_ARCHITECTU
 Open **Game place `111652489432168`** and sync:
 
 - `src/GServer` into a container inside **ServerScriptService**. `Bootstrap.server.luau` is the only executable Script; every other file is a ModuleScript. Keep Core and the new prototype modules together.
-- `src/GClient` into **StarterPlayer.StarterPlayerScripts**. Keep the root `PrototypeController.local.luau` LocalScript and all UI, Networking, Interactions, Repair, Dialogue and Effects subfolders together. Every other client source is a ModuleScript.
+- `src/GClient` into **StarterPlayer.StarterPlayerScripts**. Keep the root `PrototypeController.local.luau` LocalScript and Interactions, Repair, Dialogue and Effects adapters together. Every other client source is a ModuleScript.
+- `src/GShared` into **ReplicatedStorage.GShared** in the Game place. Keep UI, Networking and Repair subfolders, including public `Repair/Definitions`; all are ModuleScripts. These modules are required by both Game roots.
 
 Press **Play**. Existing `StudioAllowDirectGame = true` admits Studio players without a Lobby teleport. Data loading and party readiness finish before training starts. The client creates `PlayerGui.DPU_PrototypeHUD`; no Game models or UI need to be authored first.
 
@@ -48,7 +49,7 @@ Dialogue subtitles represent scripted speech; this change does not add recorded 
 
 ### Story, Endless and the party handoff
 
-**Story** is a three-night introductory arc: The First Shift (Ward Seven), Station Nine, then The Transfer List. The third customer slot contains the chapter's linked evidence phone; future chapter evidence is excluded from its deck. Choices, suspicion, answered calls and personal keepsakes carry forward. Survival on night three resolves the Story ending; personal death resolves the death ending immediately. Intermediate dawns save earned progress without granting a premature ending.
+**Story** is a five-night introductory arc: The First Shift (Ward Seven), Station Nine, The Transfer List, The Listening Room, then The Last Report. The third customer slot contains the chapter's linked evidence phone; future chapter evidence is excluded from its deck. Choices, suspicion, answered calls and personal keepsakes carry forward. Survival on night five resolves the Story ending; personal death resolves the death ending immediately. Intermediate dawns save earned progress without granting a premature ending.
 
 **Endless** scores completed nights and continues without a final Story chapter. Event frequency and job pressure increase gradually, then cap. The 90-second calm opening, bounded scare count and at least 120 seconds of customer patience remain. At dawn, surviving staff choose **NEXT NIGHT** together. Dead staff remain spectators and do not block readiness or receive repeated death rewards. HP carries over. When everyone dies, **NEW RUN** resets everyone to night one. A completed Story also offers NEW RUN.
 
@@ -72,7 +73,7 @@ The timeclock prompt opens inspection rather than stamping immediately. The came
 
 Collect the **repair kit** once to receive the reusable **Tester**, **Screwdriver**, and **Cartridge** together. These are actual Tools; keeping them in the Backpack counts. Replacement parts remain separate per-order pickups. Tools survive ordinary steps, are cleared on death/replay, and can be recollected if lost. Other staff can deliver replacement parts while the operator stays seated.
 
-The first night keeps one primary puzzle per work phase (reassembly still includes screws). Later nights add short seeded task chains: diagnosis plus one cleanup/inspection task; the fault-specific repair plus one fitting task; ordered reassembly and four screws; one software task; a signal/speaker test, sometimes power balancing, then the repair form. The same work reservation owns the whole chain. The stage counter shows progress; only the current stage is sent to the operator.
+The first night keeps one primary puzzle per work phase (reassembly still includes screws). Later nights add short seeded task chains: diagnosis plus one cleanup/inspection task; the fault-specific repair plus one fitting task; ordered reassembly and four screws; the usable customer-phone menu; a signal/speaker test, sometimes power balancing, then the repair form. The same work reservation owns the whole chain. The stage counter shows progress; only the current stage is sent to the operator.
 
 | Task | Player input |
 | --- | --- |
@@ -97,7 +98,7 @@ The first night keeps one primary puzzle per work phase (reassembly still includ
 | Debris | Drag coin, lint and paper clip into waste tray |
 | Repair form | Read results and stamp PASS/FAIL; failure requires reseating the test lead, retesting, then PASS |
 | Speaker | Repeat low/middle/high tone pattern; numbered cues and replay support muted/reduced-effects play |
-| Data link | Existing rotary-channel task remains another software variant |
+| Customer phone | Install CIVIC WATCH, browse optional records, call contacts, answer/ignore incoming calls, or ask the team to skip installation |
 
 Small tools, replacement bins, restock, notes and switches now use direct input. Remaining native holds are bench **0.4s**, intake/return **0.6s** and fuse box **1.2s**. Timeclock inspection, doors and emergency escape controls remain quick. These durations are for world prompts; HUD actions retain the same authoritative eligibility checks.
 
@@ -114,7 +115,7 @@ New server modules: **WorkPuzzles**, **ShopSecrets**. New client modules: **Puzz
 1. **Arrival and directive:** spawn outside the shop, open the STAFF DOOR, enter, and use the TIMECLOCK. Clock-in requires being inside, within five studs. Every active staff member clocks in and acknowledges the rules before the first customer arrives. Training has no customer timeout or scripted scares; the clock waits for the first completed repair.
 2. **Repair:** accept at INTAKE, sit at REPAIR BENCH, and diagnose the phone. Stand up, walk through the STOCKROOM doorway, and take the indicated Battery, Speaker, or Keypad from its shelf. Collection equips a physical Tool. Bring it back and **PLACE REPLACEMENT**, then sit to fit it. The component tweens from the tray into its exact phone slot. Reassemble and tighten all four screws, install the government package, and test. Stand and return the phone at INTAKE. E, touch prompts, and nearby HUD actions all use the same server checks.
 3. **Night:** the first training return starts a six-minute clock from midnight to 6 AM. Later nights start after briefing. Job-specific patience never falls below 120 seconds; tickets show the device, complaint, service profile, diagnosed part and quoted fee. Training pays $45. Missed orders raise suspicion. The supply crate replenishes the currently needed part.
-4. **Evidence:** three catalog customers contain linked Ward 7, Station Nine, and transport clues. Report/Hide/Investigate needs a strict majority of living staff or resolves after 18 seconds. Timeout ties prefer Report, then Hide, then Investigate; no votes means Report. Investigation unlocks that customer's server-issued clue. Future clues stay server-side until discovered.
+4. **Evidence:** five chapter customers contain linked Ward 7, Station Nine, transport, monitoring-room and Ministry archive clues. Report/Hide/Investigate needs a strict majority of living staff or resolves after 18 seconds. Timeout ties prefer Report, then Hide, then Investigate; no votes means Report. Investigation unlocks that customer's server-issued clue. Future clues stay server-side until discovered.
 5. **Disturbances:** restore a blackout, silence the disconnected phone, present records to an inspector, and shelter from a visitor. Hazards stop new arrivals, suspend approaching customers, stand seated staff, and cancel unfinished work. Existing customer patience and team-vote deadlines pause; the night clock continues. Service reopens after a six-second quiet period. Warnings have response deadlines. Ignoring disturbances causes damage; the final visitor is fatal outside the marked storage shelter. Answering the phone is an explicitly labeled dangerous alternative.
 6. **Results:** living staff survive at dawn; all staff dying ends the night immediately. Dead players cannot work after respawning and watch a living teammate until results. The summary shows team repairs, missed customers, earnings, personal repairs, team status, decisions, and save status.
 7. **Continue/new run/return:** continuing requires every remaining survivor to ready on results; a new run requires all remaining staff. A fresh RunId prevents stale actions/outcomes crossing nights. Lobby return requires visible confirmation and a recorded result; existing save/freeze/teleport code handles transfer. Studio runs its print-only return preview.
@@ -137,15 +138,15 @@ Published admission requires the reserved-server ticket. Interrupted runs do not
 | `GServer/Services/GamePrototype` | Admission/profile integration, save requests, snapshots, world adapter |
 | `GServer/Repair/RepairTemplates` | Reusable fallback phone template, authored model cloning, owned-template cleanup |
 | `GClient/PrototypeController` | Remotes, bounded HUD updates, spectating, request ownership, cleanup |
-| `GClient/Repair/PhysicalRepairView`, `PhysicalRepairTasks` | Local 3D task geometry, pointer-plane dragging, gesture validation, fallback and cleanup |
+| `GShared/Repair/PhysicalRepairView`, `PhysicalRepairTasks` | Local 3D task geometry, pointer-plane dragging, gesture validation, fallback and cleanup |
 | `GClient/Repair/RepairPresentation` | Repair camera transitions, component/objective highlight, progress, input and camera restoration |
 | `GClient/Repair/RepairAssembly` | Local replacement-part fitting tweens and visibility restoration |
 | `GServer/Repair/RepairTasks` | Authoritative probe, pairing, circuit, dial and timed memory rules |
 | `GServer/Repair/BenchTasks` | Sixteen additional task rules, screw turns, meter dwell and form retesting |
-| `GClient/Repair/BenchTaskView` | Pooled extra controls, screw faces, wave traces, meter and local speaker tones |
-| `GClient/Repair/RepairTaskView` | Pooled task layouts, drag/tap inputs, wire connections, rotary indicators and memory cues |
+| `GShared/Repair/BenchTaskView` | Pooled extra controls, screw faces, wave traces, meter and local speaker tones |
+| `GShared/Repair/RepairTaskView` | Pooled task layouts, drag/tap inputs, wire connections, rotary indicators and memory cues |
 | `GClient/Effects/ScarePresentation` | Pooled scare face, text cue, optional audio, age filtering and cleanup |
-| `GClient/UI/PrototypeView` | Terminal HUD, directive, tickets, team vote, warnings, results, controls |
+| `GShared/UI/PrototypeView` | Terminal HUD, directive, tickets, team vote, warnings, results, controls |
 
 Prompts and HUD actions both require server distance, alive/data-ready state, current order, and valid phase. One work reservation per bench prevents duplicate repairs while allowing independent jobs. Bench work also requires the server's real Seat occupancy and Humanoid seated state. Standing, moving away, disconnecting, or a disturbance cancels unfinished work. Shelf/crate interactions require being inside the parts room and within five studs; bench interactions allow six studs and require the correct room.
 
@@ -233,7 +234,7 @@ Performance checks cover zero idle assembly scene lookups, zero extra calm-perio
 - Open/close the staff door. After clock-in, tune three radio channels and switch the bench light, including between customers or during disturbances. Records on the counter activate for inspections. Restocking between customers fills the lowest shelf, two units at a time, up to eight. Activities do not grant repairs, money, or evidence unlocks.
 - Night damage can trigger a brief personal scare. The dead-air radio channel can trigger once per staff member per night. A shared 20-second personal cooldown prevents stacking; training is safe. Scares use one generated low-poly face in a [ViewportFrame](https://create.roblox.com/docs/reference/engine/classes/ViewportFrame), never the world camera. Old snapshots are discarded and repeated IDs do not replay. The normal effect lasts 0.8 seconds; reduced motion/flashes shows silent text for 1.5 seconds. Menus clear it.
 - Add `ReplicatedStorage.DontPickUpTemplates.ScareSound` before Play to replace the default impact audio. The local clone uses at most 0.6 volume multiplied by MasterVolume and is destroyed when the cue ends; the authored Sound is preserved. Default impact/anomaly Sounds are reused and stopped between cues.
-- Eight Story conclusions appear above the result stats. Priority is **Missing Employee** for death; for survivors at the end of night three, **The Line Is Still Open** if anyone answered, **Under Observation** at suspicion 50+, **The Night Archivist** after all three personal keepsakes, **After-hours Witness** after Investigate, **Civilian Protector** after Hide, **Loyal Employee** after Report, otherwise **Another Morning**. Decisions and discoveries accumulate across the short arc.
+- Eight Story conclusions appear above the result stats. Priority is **Missing Employee** for death; for survivors at the end of night five, **The Line Is Still Open** if anyone answered, **Under Observation** at suspicion 50+, **The Night Archivist** after all three personal keepsakes, **After-hours Witness** after Investigate, **Civilian Protector** after Hide, **Loyal Employee** after Report, otherwise **Another Morning**. Decisions and discoveries accumulate across the short arc.
 - Ending IDs use `RecordOutcome` and `Progress.Endings`; no schema change or reward remote. Dead teammates retain their personal death ending. Endless and interrupted survivors receive no Story ending. Next-night readiness preserves the run; NEW RUN clears it.
 
 `Secure` starts an owned puzzle using `{ RunId, OrderId, Action = "Secure" }`. Reassembly and screw turns use the current WorkId and PuzzleRevision; obsolete Contact fields never advance progress. Distance, seating, screwdriver ownership, current step, expiry and cooldown remain server-checked. ClockIn is idempotent. Optional actions use their station and a shared per-action cooldown (radio three seconds, other activities one second).
@@ -252,7 +253,7 @@ Revenue, stock, suspicion, orders, and team decisions are **run-local**. This do
 
 ## Limits and checks
 
-This is a generated-shop prototype with a short three-night Story and continuing Endless nights. The larger authored campaign, additional repair hardware and persistent shared checkpoints remain future work. Characters, props, repairs and clues are temporary. Authored assets can replace the world adapter later.
+This is a generated-shop prototype with a short five-night Story and continuing Endless nights. The larger authored campaign, additional repair hardware and persistent shared checkpoints remain future work. Characters, props, repairs and clues are temporary. Authored assets can replace the world adapter later.
 
 Run all six suites in README. The prototype suite includes 24 seeds per new task, stale-input rejection, task-chain completion, UI bindings, meter timing, prompt durations, and 1-4-player handoffs. `tests/Prototype.luau` covers complete survival, death/shelter, training, work cancellation, duplicate rewards/parts, voting, outcomes, interruption, replay, and generated world/UI bindings. Adapter tests use mocked services/instances and real vector math; they do not render Roblox.
 

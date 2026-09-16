@@ -1,5 +1,6 @@
 -- Methods operate on the owning shift; no module-global gameplay state.
 local Methods = {}
+local Pickup = require(script.Parent.Parent.Customers.PickupService)
 local Stations = require(script.Parent.Parent.Repair.RepairStations)
 local Puzzles = require(script.Parent.Parent.Repair.WorkPuzzles)
 local Dialogue = require(script.Parent.Parent.Services.DialogueService)
@@ -41,6 +42,7 @@ function Methods:Snapshot(player)
 				and (self.phase == "Tutorial" or self.phase == "Night"),
 			DoorOpen = self.doorOpen == true,
 			Focus = member and member.Focus and table.clone(member.Focus),
+			Fax = Pickup.Snapshot(self, member),
 			Inspection = member and member.Inspection and table.clone(member.Inspection),
 			Kit = member and table.clone(member.Kit) or {},
 			SecretsFound = member and (function()
@@ -82,6 +84,9 @@ function Methods:Snapshot(player)
 			Repaired = self.repaired,
 			Missed = self.missed,
 			Revenue = self.revenue,
+			PhoneReads = self.phoneReads or 0,
+			PhoneCalls = self.phoneCalls or 0,
+			RuleBreaks = self.ruleBreaks or 0,
 			Suspicion = self.suspicion,
 			Stock = table.clone(self.stock),
 			CanReturn = self:CanReturn(player),
@@ -114,6 +119,7 @@ function Methods:Snapshot(player)
 	if order then
 		snapshot.Order = {
 			Id = order.Id,
+			Ticket = order.Ticket,
 			Customer = order.Customer,
 			Complaint = order.Complaint,
 			Device = order.Device,
@@ -134,7 +140,8 @@ function Methods:Snapshot(player)
 		snapshot.Objective = OBJECTIVES[order.Step]
 		snapshot.Target = (order.Step == "Waiting" or order.Step == "Arriving") and "Counter"
 			or order.Step == "Collect" and (self.stock[order.Fault] > 0 and "Part_" .. order.Fault or "Stock")
-			or order.Step == "Return" and "Counter"
+			or order.Step == "ReadyForPickup" and "Fax"
+			or (order.Step == "Return" or order.Step == "PickupArriving") and "Counter"
 			or lane.Id
 	end
 	local voting = Stations.Voting(self)
@@ -142,9 +149,13 @@ function Methods:Snapshot(player)
 		local order = voting.order
 		snapshot.Vote = {
 			OrderId = order.Id,
+			Ticket = order.Ticket,
 			EndsAt = order.VoteEndsAt,
 			Choice = order.Votes[player],
-			Message = order.Evidence and order.Evidence.Message or "DELETED MESSAGE: 'Ward 7 is not empty.'",
+			Purpose = order.VotePurpose,
+			Message = order.VotePurpose == "Software"
+					and "The technician wants to leave this phone without CIVIC WATCH. This breaks government rules."
+				or (order.Evidence and order.Evidence.Message or "Private information was found."),
 			Report = 0,
 			Hide = 0,
 			Investigate = 0,

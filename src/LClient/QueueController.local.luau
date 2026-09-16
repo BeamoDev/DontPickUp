@@ -7,8 +7,10 @@ assert(
 	"LClient must sync into StarterPlayerScripts"
 )
 local playerGui = player:WaitForChild("PlayerGui")
-local View = require(script.Parent.UI.QueueView)
-local Requests = require(script.Parent.Networking.QueueRequests)
+local Shared = ReplicatedStorage:WaitForChild("LShared", 30)
+assert(Shared, "Sync src/LShared to ReplicatedStorage.LShared in the Lobby place")
+local View = require(Shared:WaitForChild("UI", 30):WaitForChild("QueueView", 30))
+local Requests = require(Shared:WaitForChild("Networking", 30):WaitForChild("QueueRequests", 30))
 local state = { Active = false, Revision = -1 }
 local view, request, busy = nil, nil, nil
 local changedConnection

@@ -1,6 +1,6 @@
 -- Run progression stays in this reserved server; profiles only store earned outcomes.
 local Modes = {}
-Modes.StoryNights = 3
+Modes.StoryNights = 5
 local chapters = {
 	{
 		Title = "THE FIRST SHIFT",
@@ -14,8 +14,18 @@ local chapters = {
 	},
 	{
 		Title = "THE TRANSFER LIST",
-		Text = "One more shift. The phones know the routine now. Fix what you can, decide what to report, and get everyone to morning.",
+		Text = "The phones know the routine now. Fix what you can, decide what to report, and get everyone to morning.",
 		Customer = "silas",
+	},
+	{
+		Title = "THE LISTENING ROOM",
+		Text = "Every repaired phone is listening. Find out where the recordings go. The Ministry is checking private calls tonight.",
+		Customer = "mira",
+	},
+	{
+		Title = "THE LAST REPORT",
+		Text = "Last night. The government wants the archive sealed. What you report and what you protect will decide how you leave.",
+		Customer = "reed",
 	},
 }
 function Modes.Continue(mode, night, reason, living)
@@ -43,7 +53,11 @@ function Modes.Customer(mode, night)
 	return mode == "Story" and chapters[math.min(night, #chapters)].Customer or nil
 end
 function Modes.Directive(base, mode, night)
+	local policy = night >= 2 and "\nTODAY: do not read private messages or recordings."
+		or "\nTODAY: you may check messages while testing."
+	policy ..= night >= 3 and "\nPRIVATE CALLS: do not call contacts or answer customer calls. Use only the fax for pickup." or "\nPRIVATE CALLS: allowed for testing today."
 	return base:gsub("TONIGHT'S RULES 01", "TONIGHT'S RULES " .. string.format("%02d", night))
+		.. policy
 		.. (mode == "Endless" and "\nENDLESS: reach 6 AM. Everyone still alive can choose to play the next night." or "\nSTORY: your choices and the notes you find still count on the next night.")
 		.. "\nREPAIR TIP: follow the instructions on this phone. Each phone can have a different answer."
 end

@@ -33,6 +33,12 @@ function Conversations.Intake(order, player)
 	}
 end
 function Conversations.Return(order, player)
+	if order.Phone and order.Phone.PassMessage then
+		return {
+			line(player.DisplayName, "Your family called. They love you. Also: bring bread.", player.UserId),
+			line(order.Customer, "You answered my phone? ...Thanks for telling me. Please keep that between us."),
+		}
+	end
 	return {
 		line(order.Customer, order.Line),
 		line(

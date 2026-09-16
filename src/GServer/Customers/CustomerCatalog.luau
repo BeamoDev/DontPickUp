@@ -243,6 +243,16 @@ local rows = {
 	},
 }
 local evidence = {
+	mira = {
+		Id = "prototype_listening_room",
+		Message = "VOICE MEMO: Every CIVIC WATCH copy goes to the listening room below Station Nine.",
+		Discovery = "The archive lists ordinary families, not criminals. The repair program built the list.",
+	},
+	reed = {
+		Id = "prototype_final_report",
+		Message = "MINISTRY ORDER: seal the Ward Seven archive before the last morning collection.",
+		Discovery = "The officer kept a second copy. The missing people and the recorded calls share the same case numbers.",
+	},
 	nina = {
 		Id = "prototype_ward7",
 		Message = "DELETED MESSAGE: 'Nina, Ward 7 is not empty. They can hear us.'",

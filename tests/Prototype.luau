@@ -96,6 +96,8 @@ do
 	f:repair()
 	f.run:_newOrder(false)
 	f.run.stations.Bench.order.Sensitive, f.run.stations.Bench.order.Step = true, "Evidence"
+	f.run.stations.Bench.order.Evidence = { Id = "prototype_ward7", Discovery = "Ward Seven" }
+	f.run.stations.Bench.order.Phone = { Discovered = true, Installed = true, Revision = 1 }
 	f.run.stations.Bench.order.Votes, f.run.stations.Bench.order.VoteEndsAt = {}, f.h.time + f.c.VoteSeconds
 	local id = f.run.stations.Bench.order.Id
 	f:act("Vote", f.p[1], { OrderId = id, Choice = "Investigate" })
@@ -103,7 +105,9 @@ do
 	check(not f:act("Vote", f.p[2], { OrderId = id, Choice = "Cheat" }), "invalid evidence choice rejected")
 	f:act("Vote", f.p[2], { OrderId = id, Choice = "Investigate" })
 	check(
-		f.run.stations.Bench.order.Step == "Test" and f.run.suspicion == 30,
+		f.run.stations.Bench.order.Step == "Install"
+			and f.run.stations.Bench.order.Phone.Page == "Archive"
+			and f.run.suspicion == 30,
 		"strict majority resolves once with consequences"
 	)
 	check(f.evidence[f.p[1]] == "prototype_ward7", "investigation unlocks server-issued evidence")
@@ -358,6 +362,7 @@ do
 	check(act("Test", "Bench"), "repaired phone can be tested")
 	f:advance(f.c.WorkSeconds)
 	f:act("Stand")
+	f:pickup()
 	check(
 		act("Return", "Counter") and f.run.phase == "Night" and f.run.revenue == 45,
 		"explicit seated/tool journey finishes training and starts a playable night"
@@ -850,6 +855,26 @@ do
 			and not world.prompts.Counter.Enabled,
 		"world prompts follow repair step"
 	)
+	check(not world.repairLanes.Bench.customer, "customer leaves after dropping off the phone")
+	check(world.stations.Fax and world.actions.Fax == "OpenFax", "fax is available for pickup calls")
+	fakeRun.stations.Bench.order.Step = "ReadyForPickup"
+	world:Render(fakeRun)
+	check(
+		not world.repairLanes.Bench.customer and not world.prompts.Counter.Enabled,
+		"ready phone does not summon its owner automatically"
+	)
+	fakeRun.stations.Bench.order.Step = "PickupArriving"
+	world:Render(fakeRun)
+	check(world.repairLanes.Bench.customer ~= nil, "callback brings customer back into the scene")
+	fakeRun.stations.Bench.order.Step = "Return"
+	world:Render(fakeRun)
+	check(
+		world.prompts.Counter.Enabled and not world.repairLanes.Bench.visible,
+		"return moves phone from bench to counter"
+	)
+	for part, alpha in pairs(world.repairLanes.Bench.counterParts) do
+		check(part.Transparency == alpha, "pickup phone is visible at counter")
+	end
 	fakeRun.event = { Kind = "Blackout" }
 	world:Render(fakeRun)
 	check(
@@ -879,7 +904,7 @@ do
 	check(world.actions == actions, "twenty puzzle/profile revisions cause zero unchanged-scene prompt rebuilds")
 	local playerGui = h.instance("PlayerGui")
 	local used, lobbyCalls = nil, 0
-	local view = h:load("src/GClient/UI/PrototypeView.luau").new(playerGui, {
+	local view = h:load("src/GShared/UI/PrototypeView.luau").new(playerGui, {
 		act = function(action)
 			used = action
 		end,
@@ -1527,7 +1552,7 @@ do
 	reduced = false
 	check(not stationUi.panel.Parent and not stationUi.frame, "clock teardown disconnects input and camera callbacks")
 	local taskInput = { InputChanged = signal(), InputEnded = signal() }
-	local puzzleUi = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
+	local puzzleUi = h:load("src/GShared/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
 		sent, args = action, payload
 	end, {
 		input = taskInput,
@@ -1553,7 +1578,7 @@ do
 		"speaker puzzle renders distinct wire ends and sockets"
 	)
 	puzzleUi.tasks.buttons[1].Activated:Fire()
-	puzzleUi.tasks.buttons[4].Activated:Fire()
+	puzzleUi.tasks.buttons[5].Activated:Fire()
 	check(
 		sent == "PuzzleInput" and args.Move == 11 and args.PuzzleRevision == 0 and args.WorkId == "work1",
 		"puzzle controls submit task-scoped intent"
@@ -1561,14 +1586,14 @@ do
 	puzzleUi:Update(working, true, false)
 	sent = nil
 	puzzleUi.tasks.buttons[1].Activated:Fire()
-	puzzleUi.tasks.buttons[4].Activated:Fire()
+	puzzleUi.tasks.buttons[5].Activated:Fire()
 	check(sent == nil, "busy puzzle cannot queue overlapping inputs")
 	puzzleUi:Update(working, false, false)
 	local taskUi = puzzleUi.tasks
 	taskUi.root.AbsolutePosition, taskUi.root.AbsoluteSize = Roblox.Vector2.new(100, 100), Roblox.Vector2.new(300, 180)
 	for i, button in ipairs(taskUi.buttons) do
-		button.AbsolutePosition = Roblox.Vector2.new(i <= 3 and 100 or 310, 100 + (i - 1) % 3 * 60)
-		button.AbsoluteSize = Roblox.Vector2.new(90, 54)
+		button.AbsolutePosition = Roblox.Vector2.new(i <= 4 and 100 or 310, 100 + (i - 1) % 4 * 45)
+		button.AbsoluteSize = Roblox.Vector2.new(90, 39)
 	end
 	local finger = { UserInputType = h.env.Enum.UserInputType.Touch, Position = Roblox.Vector3.new(145, 163, 0) }
 	taskUi.buttons[1].InputBegan:Fire(finger)
@@ -1797,7 +1822,7 @@ do
 	local cameraReady, physicalCalls = true, 0
 	local physicalState = { RunId = "physical", Phase = "Night", Alive = true, Seated = true, SeatStation = "Bench" }
 	local physicalPuzzle, physicalMove, physicalPayload
-	local physical = h:load("src/GClient/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
+	local physical = h:load("src/GShared/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
 		check(action == "PuzzleInput", "physical tasks use the existing scoped action")
 		physicalCalls += 1
 		physicalMove, physicalPayload = payload.Move, payload
@@ -1973,7 +1998,7 @@ do
 	physical:Destroy()
 	check(not physical.hint.Parent and not physical.mode.Parent, "physical task teardown removes owned UI")
 	cameraReady = true
-	local mixed = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
+	local mixed = h:load("src/GShared/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
 	mixed:Update(physicalState, false, false)
 	check(
 		mixed.physical.folder and not mixed.panel.Visible,
@@ -2135,7 +2160,7 @@ do
 	check(not f.run:Snapshot(f.p[1]).Ending, "future ending is not exposed while alive")
 	f.run:Damage(f.p[1], 100, "test")
 	f.run.answered = 1
-	f.run.night = 3
+	f.run.night = 5
 	f.run:Finish("Dawn")
 	check(
 		f.records[f.p[1]][1].Ending == "prototype_missing_employee",
@@ -2293,6 +2318,7 @@ for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 	check(act("Test", "Bench"), "tester opens final function puzzle")
 	f:solve()
 	f:act("Stand")
+	f:pickup()
 	check(
 		act("Return", "Counter") and f.run.phase == "Night",
 		"full interactive " .. fault .. " training reaches playable night"
@@ -2342,7 +2368,7 @@ do
 	f:advance(1.1)
 	f:act("Discover", p, { Secret = "Locker" })
 	check(f.run:Snapshot(p).SecretsFound == 3 and f.run.revenue == 0, "rereading keepsakes cannot duplicate rewards")
-	f.run.night = 3
+	f.run.night = 5
 	f.run:Finish("Dawn")
 	check(
 		f.records[p][1].Ending == "prototype_night_archivist",
@@ -2661,7 +2687,7 @@ for count = 1, 4 do
 		local outcomeIds = {}
 		f.run.decisions = { "Hide" }
 		f.run.players[f.p[1]].Secrets.Timecard = true
-		local nights = mode == "Story" and 3 or 5
+		local nights = mode == "Story" and 5 or 6
 		for night = 1, nights do
 			check(
 				f.run.night == night and f.run.phase == "Night",
@@ -2690,14 +2716,14 @@ for count = 1, 4 do
 				)
 				outcomeIds[record.Id] = true
 				check(
-					(record.Ending ~= nil) == (mode == "Story" and night == 3),
+					(record.Ending ~= nil) == (mode == "Story" and night == 5),
 					"only final Story survival awards an ending"
 				)
 			end
-			if mode == "Story" and night == 3 then
-				check(not f.run:CanContinue(), "Story concludes at chapter three")
+			if mode == "Story" and night == 5 then
+				check(not f.run:CanContinue(), "Story concludes at chapter five")
 				check(
-					f.records[f.p[1]][3].Ending == "prototype_civilian_protector",
+					f.records[f.p[1]][5].Ending == "prototype_civilian_protector",
 					"earlier decisions determine the final Story ending"
 				)
 			else
@@ -2899,6 +2925,7 @@ for count = 1, 4 do
 	check(f:act("Test", actor(4)), "final inspection can be completed cooperatively")
 	f:solve()
 	f:act("Stand", actor(4))
+	f:pickup(actor(1))
 	check(f:act("Return", actor(1)), "intake staff returns completed phone")
 	for _, p in ipairs(f.p) do
 		check(f.run.players[p].Repairs == before[p] + 1, "each contributor earns one repair credit")
@@ -2938,7 +2965,7 @@ do
 					not rules.Input(puzzle, move, puzzle.Revision, 100) and puzzle.Progress == 1,
 					"same part cannot fill multiple slots"
 				)
-				for item = 2, 3 do
+				for item = 2, #puzzle.Slots do
 					ok, solved = rules.Input(puzzle, item * 10 + table.find(puzzle.Slots, item), puzzle.Revision, 100)
 				end
 			else

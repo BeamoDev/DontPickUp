@@ -2,6 +2,7 @@
 local Shift = {}
 Shift.__index = Shift
 local Stations = require(script.Parent.Parent.Repair.RepairStations)
+local Pickup = require(script.Parent.Parent.Customers.PickupService)
 local Catalog = require(script.Parent.Parent.Customers.CustomerCatalog)
 local Endings = require(script.Parent.EndingRules)
 local Lore = require(script.Parent.Parent.Lore.LoreService)
@@ -96,6 +97,7 @@ function Shift:_start(continuing)
 	self.nextOutsideCheck = nil
 	self.doorOpen, self.lampOn, self.radioChannel = false, true, 0
 	self.answered = continuing and self.answered or 0
+	self.phoneReads, self.phoneCalls, self.ruleBreaks = 0, 0, 0
 	self.optionalCooldowns = {}
 	self.id = self.d.id()
 	self.phase, self.reason, self.endedAt = "Tutorial", nil, nil
@@ -124,6 +126,7 @@ function Shift:_start(continuing)
 		member.ScareImpact, member.Outside, member.Injury = nil, nil, nil
 		member.Kit, member.Secrets, member.Focus = {}, continuing and member.Secrets or {}, nil
 		member.NextDiscovery, member.Inspection, member.StationId = nil, nil, "Bench"
+		member.Fax = nil
 		self.d.clearGear(player)
 		self.d.stand(player)
 		if alive then
@@ -193,6 +196,7 @@ function Shift:Damage(player, amount, reason, fromScare)
 			self:_scare(player, "Visitor", false, { Damage = amount, Reason = reason, Applied = true })
 		end
 		member.Focus = nil
+		member.Fax = nil
 		self.d.stand(player)
 		Stations.CancelPlayer(self, player)
 		member.Injury = { Damage = math.min(amount, member.HP), Reason = reason, ExpiresAt = self.d.clock() + 8 }
@@ -203,6 +207,7 @@ function Shift:Damage(player, amount, reason, fromScare)
 		self.d.stand(player)
 		member.Alive, member.Outcome, member.DeathReason = false, "Died", reason
 		member.Focus = nil
+		member.Fax = nil
 		member.ScareImpact, member.Outside = nil, nil
 		self.d.clearGear(player)
 		Stations.CancelPlayer(self, player)
@@ -260,6 +265,7 @@ function Shift:Tick()
 	end
 	for player, member in pairs(self.players) do
 		Lore.Tick(self, player, member)
+		Pickup.Tick(self, player, member)
 		local lane = Stations.ForPlayer(self, player)
 		if
 			member.Focus
@@ -285,6 +291,8 @@ function Shift:Tick()
 				or lane.order.Step == "Waiting"
 				or lane.order.Step == "Arriving"
 				or lane.order.Step == "Return"
+				or lane.order.Step == "ReadyForPickup"
+				or lane.order.Step == "PickupArriving"
 			)
 		then
 			self.d.stand(player)

@@ -6,6 +6,7 @@ Layout.Rooms = {
 	Stockroom = { -21.5, 21.5, 8.5, 22.5 },
 }
 Layout.Access = {
+	Fax = "Shop",
 	Counter = "Shop",
 	Secret_DeskNote = "Shop",
 	Secret_Directive = "Shop",

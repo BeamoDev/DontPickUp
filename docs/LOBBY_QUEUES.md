@@ -4,11 +4,11 @@ Current folder deployment and latest controls are defined in [CURRENT_ARCHITECTU
 
 ## Sync and authored hierarchy
 
-Sync the updated **LServer**, **LClient**, and **GServer** roots together. Lobby place: `110554757455252`; Game place: `111652489432168`.
+Sync **LServer**, **LClient**, and **LShared** together in Lobby; sync **GServer**, **GClient**, and **GShared** in Game. Lobby place: `110554757455252`; Game place: `111652489432168`.
 
 - Lobby `LServer` belongs inside `ServerScriptService`, retaining its module subtree.
-- Include `QueueBillboard.luau` as a sibling ModuleScript of `QueueWorld.luau`; it binds the updated world sign.
-- Lobby `LClient` belongs inside `StarterPlayer.StarterPlayerScripts`. `QueueController.local.luau` is a LocalScript; `UI/QueueView.luau` and `Networking/QueueRequests.luau` are ModuleScripts under the same client root. Sync all three together with the updated Lobby server.
+- Sync `src/LShared` to **ReplicatedStorage.LShared** in Lobby. Its `UI/QueueBillboard.luau` renders the world sign; `Geometry/QueueGeometry.luau` provides the server bounds calculation.
+- Lobby `LClient` belongs inside `StarterPlayer.StarterPlayerScripts`. `QueueController.local.luau` is a LocalScript. `UI/QueueView.luau` and `Networking/QueueRequests.luau` are ModuleScripts under Shared, required by that controller.
 - Game `GServer` contains the matching Core and GameSession changes that preserve the selected mode during admission.
 - The client uses the replicated copy of your authored `StarterGui.Queue`, at `PlayerGui.Queue`. No replacement ScreenGui or physical queue model is generated.
 
@@ -89,7 +89,7 @@ The four-times-per-second bounds check remains a fallback for missed contacts, s
 
 Host departure transfers leadership to the oldest remaining member. Death, disconnect, setup expiry, walking more than 35 studs from EnterPos, or deleting a pad cleans up its physical membership. Walking away releases membership in place rather than pulling the player back to ExitPos. Create and Leave publish their completed physical state so setup does not flash back open while leaving. A transfer failure releases the remaining pad members so they can regroup. Server profile freeze/ownership rules remain enforced.
 
-`QueueBillboard` binds `Icon`, nested `Icon.Bar.Gamemode`, `Title`, `PlayerCount`, and `Status`. Sync **LServer/Queues/QueueBillboard** and **LClient/QueueController** together for this hierarchy. `PlayerCount` shows the actual count/capacity, such as `2/3`. Empty signs display Story; a created party displays its confirmed mode. The title is `SHIFT AVAILABLE` when empty and `<HOST>'S SHIFT` when occupied, including after leadership changes.
+`QueueBillboard` binds `Icon`, nested `Icon.Bar.Gamemode`, `Title`, `PlayerCount`, and `Status`. Sync **LShared/UI/QueueBillboard** and **LClient/QueueController** together for this hierarchy. `PlayerCount` shows the actual count/capacity, such as `2/3`. Empty signs display Story; a created party displays its confirmed mode. The title is `SHIFT AVAILABLE` when empty and `<HOST>'S SHIFT` when occupied, including after leadership changes.
 
 | Queue state | Status | Accent |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ Optional string attributes `StoryIcon` and `EndlessIcon` on the **Queue folder/m
 
 Queue sign animations have been removed. Text, images, status colors, and visibility update directly; scripts do not change label Size, Position, UIScale, TextSize, TextScaled, or TextWrapped. Configure text fit in Studio.
 
-Sync the updated **LClient/QueueController** and **LServer/Queues/QueueBillboard**, then restart Play. The retired QueueBillboardMotion ModuleScript is no longer required and can be removed from Studio if sync leaves it behind.
+Sync the updated **LClient/QueueController** and **LShared/UI/QueueBillboard**, then restart Play. The retired QueueBillboardMotion ModuleScript is no longer required and can be removed from Studio if sync leaves it behind.
 
 ## Studio teleport preview
 

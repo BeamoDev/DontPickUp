@@ -11,19 +11,16 @@ function DataService.new(services, config)
 		else services.DataStoreService:GetDataStore(
 			config.DataStoreName .. (services.RunService:IsStudio() and "_STUDIO" or "")
 		)
-	local self = setmetatable(
-		{
-			s = services,
-			config = config,
-			entries = {},
-			loading = {},
-			closing = false,
-			practice = practice,
-			memory = {},
-			activeLoads = 0,
-		},
-		DataService
-	)
+	local self = setmetatable({
+		s = services,
+		config = config,
+		entries = {},
+		loading = {},
+		closing = false,
+		practice = practice,
+		memory = {},
+		activeLoads = 0,
+	}, DataService)
 	self.store = SessionStore.new({
 		config = config,
 		schema = Schema,
@@ -218,6 +215,9 @@ function DataService:RecordOutcome(player, outcome)
 		return true, "AlreadyApplied"
 	end
 	data.Stats.CasesSolved += outcome.CasesSolved
+	-- Fixed server wage, settled once with the existing outcome identifier.
+	data.Stats.Credits =
+		math.min(2000000000, data.Stats.Credits + outcome.CasesSolved * 10 + (outcome.Survived and 50 or 0))
 	if outcome.Survived then
 		data.Stats.ShiftsSurvived += 1
 		data.Progress.HighestShift = math.max(data.Progress.HighestShift, outcome.Shift + 1)

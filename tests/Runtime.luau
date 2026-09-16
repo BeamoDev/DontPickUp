@@ -272,19 +272,15 @@ do
 	local data = h:load(core .. "DataService.luau").new(s, Config)
 	local a = h:player(1)
 	check(data:Load(a) and data:IsReady(a), "practice profile loads")
+	check(persistentCalls == 0 and a.Session.Persistent.Value == false, "Studio practice makes no storage calls")
 	check(
-		persistentCalls == 0 and a.Session.Persistent.Value == false,
-		"Studio practice makes no storage calls"
-	)
-	check(
-		a.leaderstats["Shifts Survived"].Value == 0 and a.PlayerData.Progression.HighestShift.Value == 1,
+		a.leaderstats["Best Night"].Value == 0 and a.PlayerData.Progression.HighestShift.Value == 1,
 		"authored player folder defaults"
 	)
-	check(
-		a.Session.DataLoaded.Value and a.Session.DataStatus.Value == "Ready",
-		"player loading status visible"
-	)
-	a.leaderstats["Cases Solved"].Value = 999
+	check(a.Session.DataLoaded.Value and a.Session.DataStatus.Value == "Ready", "player loading status visible")
+	a.PlayerData.Statistics.CasesSolved.Value = 999
+	a.leaderstats.Credits.Value = 999999
+	check(data:Get(a).Stats.Credits == 0, "replicated credits cannot mutate the wallet")
 	check(data:Get(a).Stats.CasesSolved == 0, "replicated ValueObjects cannot grant persistent progress")
 	check(
 		data:SetSetting(a, "Subtitles", false) and not data:SetSetting(a, "MasterVolume", 0 / 0),
@@ -297,10 +293,9 @@ do
 		data:RecordOutcome(a, outcome) and data:Get(a).Stats.CasesSolved == 4,
 		"duplicate run outcome not granted twice"
 	)
-	check(
-		data:UnlockEvidence(a, "phone-note") and data:CompleteTutorial(a),
-		"server evidence and tutorial API"
-	)
+	check(data:Get(a).Stats.Credits == 90 and a.leaderstats.Credits.Value == 90, "four repairs plus survival pay once")
+	check(a.leaderstats["Best Night"].Value == 1, "leaderstat is highest completed night, not lifetime total")
+	check(data:UnlockEvidence(a, "phone-note") and data:CompleteTutorial(a), "server evidence and tutorial API")
 	check(
 		data:Get(a).Progress.HighestShift == 2 and a.PlayerData.Progression.EndingsFound.Value == 1,
 		"progress and ending count updated"
@@ -388,8 +383,7 @@ do
 	b.JoinData = a.JoinData
 	check(tickets:Claim(a) ~= nil, "destination claims admission atomically")
 	check(
-		tickets:Claim(a).Ticket.GameData.Mode == "Endless"
-			and tickets:Claim(a).Ticket.GameData.StartNight == 1,
+		tickets:Claim(a).Ticket.GameData.Mode == "Endless" and tickets:Claim(a).Ticket.GameData.StartNight == 1,
 		"forged teleport presentation data cannot change authoritative mode or starting night"
 	)
 	check(tickets:Claim(a) ~= nil, "duplicate destination claim succeeds idempotently")
@@ -491,10 +485,7 @@ do
 		not net.request.OnServerInvoke(player, "Join", { PartyId = string.rep("x", 81) }).Ok,
 		"oversized payload rejected"
 	)
-	check(
-		not net.request.OnServerInvoke(player, "Kick", { UserId = math.huge }).Ok,
-		"nonfinite payload rejected"
-	)
+	check(not net.request.OnServerInvoke(player, "Kick", { UserId = math.huge }).Ok, "nonfinite payload rejected")
 	net.busy[player] = true
 	check(not net.request.OnServerInvoke(player, "GetState").Ok, "overlapping yielding requests blocked")
 	local worker = h:player(42)
@@ -516,10 +507,7 @@ do
 		"puzzle payload still rejects excessive fields"
 	)
 	input.Extra = nil
-	check(
-		not net.request.OnServerInvoke(worker, "Join", input).Ok,
-		"ordinary requests retain four-field bound"
-	)
+	check(not net.request.OnServerInvoke(worker, "Join", input).Ok, "ordinary requests retain four-field bound")
 end
 
 do
@@ -551,10 +539,7 @@ do
 			and string.find(h.prints[2][1], "User2 (2)", 1, true) ~= nil,
 		"Studio prints selected mode, validated roster, and destination"
 	)
-	check(
-		a:GetAttribute("DPU_TravelStatus") == "StudioPreviewComplete",
-		"preview publishes explicit diagnostic status"
-	)
+	check(a:GetAttribute("DPU_TravelStatus") == "StudioPreviewComplete", "preview publishes explicit diagnostic status")
 	h.prints = {}
 	f.failSave[b] = true
 	ok, reason = travel:Begin({ a, b }, "Game", function()

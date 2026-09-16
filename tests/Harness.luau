@@ -241,11 +241,31 @@ function Harness.Environment()
 		local function node(location)
 			return setmetatable({ Path = location }, {
 				__index = function(_, key)
+					if key == "WaitForChild" then
+						return function(_, name)
+							local child = location .. "/" .. name
+							return (fs.isDir(child) or fs.isFile(child .. ".luau")) and node(child) or nil
+						end
+					end
 					return node(key == "Parent" and location:match("^(.*)/[^/]+$") or location .. "/" .. key)
 				end,
 			})
 		end
 		local env = table.clone(self.env)
+		-- Keep live place/job fields shared with fixtures while resolving per-place modules.
+		env.game = setmetatable({}, { __index = self.env.game })
+		function env.game:GetService(name)
+			if name == "ReplicatedStorage" then
+				return {
+					WaitForChild = function(_, child)
+						local rootName = assert(path:match("^src/([LG])")) .. "Shared"
+						assert(child == rootName, "Expected ReplicatedStorage." .. rootName .. ", got " .. child)
+						return node("src/" .. rootName)
+					end,
+				}
+			end
+			error("Unsupported test service: " .. name)
+		end
 		env.script = node(path:gsub("%.luau$", ""))
 		env.require = function(module)
 			module = type(module) == "table" and module.Path .. ".luau" or module

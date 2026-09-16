@@ -26,7 +26,17 @@ function Requests.Payload(state, action, choice)
 		end
 	end
 	if type(choice) == "table" and action ~= "Interact" then
-		for _, key in ipairs({ "FocusId", "WorkId", "OrderId", "Move", "PuzzleRevision", "InspectionId", "Station" }) do
+		for _, key in ipairs({
+			"FocusId",
+			"WorkId",
+			"OrderId",
+			"Move",
+			"PuzzleRevision",
+			"InspectionId",
+			"Station",
+			"FaxId",
+			"Ticket",
+		}) do
 			if choice[key] ~= nil then
 				payload[key] = choice[key]
 			end
@@ -45,7 +55,7 @@ function Requests:Send(action, choice)
 	local state = self.d.state()
 	local name, payload = Requests.Payload(state, action, choice)
 	if self.pending then
-		if action == "CloseInspection" or action == "CloseFocus" or action == "Stand" then
+		if action == "CloseFax" or action == "CloseInspection" or action == "CloseFocus" or action == "Stand" then
 			self.deferred = { Name = name, Payload = payload, RunId = state.RunId }
 		end
 		return

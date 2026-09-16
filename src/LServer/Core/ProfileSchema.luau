@@ -1,5 +1,5 @@
 -- Pure schema. Replicated ValueObjects are views, never the save source.
-local Schema = { Version = 1 }
+local Schema = { Version = 2 }
 
 function Schema.Copy(value)
 	if type(value) ~= "table" then
@@ -19,7 +19,7 @@ end
 function Schema.Default()
 	return {
 		Version = Schema.Version,
-		Stats = { ShiftsSurvived = 0, CasesSolved = 0, Deaths = 0, PlaytimeSeconds = 0 },
+		Stats = { Credits = 0, ShiftsSurvived = 0, CasesSolved = 0, Deaths = 0, PlaytimeSeconds = 0 },
 		Progress = { HighestShift = 1, TutorialComplete = false, Endings = {}, Evidence = {} },
 		Settings = { MasterVolume = 0.8, MusicVolume = 0.6, Subtitles = true, ReducedFlashes = false },
 		RecentOutcomes = {},
@@ -38,15 +38,12 @@ function Schema.Validate(data)
 	if type(data.Stats) ~= "table" or type(data.Progress) ~= "table" or type(data.Settings) ~= "table" then
 		return false
 	end
-	for _, key in ipairs({ "ShiftsSurvived", "CasesSolved", "Deaths", "PlaytimeSeconds" }) do
+	for _, key in ipairs({ "Credits", "ShiftsSurvived", "CasesSolved", "Deaths", "PlaytimeSeconds" }) do
 		if not integer(data.Stats[key], 0, 2000000000) then
 			return false
 		end
 	end
-	if
-		not integer(data.Progress.HighestShift, 1, 10000)
-		or type(data.Progress.TutorialComplete) ~= "boolean"
-	then
+	if not integer(data.Progress.HighestShift, 1, 10000) or type(data.Progress.TutorialComplete) ~= "boolean" then
 		return false
 	end
 	for _, key in ipairs({ "Endings", "Evidence" }) do
@@ -89,20 +86,28 @@ function Schema.Decode(record)
 		return Schema.Default()
 	end
 	-- Unknown/future versions and malformed records fail closed. Add explicit migrations here.
-	if type(record) ~= "table" or record.Format ~= 1 or not Schema.Validate(record.Data) then
+	if type(record) ~= "table" or record.Format ~= 1 then
+		return nil
+	end
+	local data = record.Data
+	if type(data) == "table" and data.Version == 1 then
+		data = Schema.Copy(data)
+		data.Version = Schema.Version
+		if type(data.Stats) ~= "table" then
+			return nil
+		end
+		data.Stats.Credits = 0
+	end
+	if not Schema.Validate(data) then
 		return nil
 	end
 	if record.Lease ~= nil then
 		local lease = record.Lease
-		if
-			type(lease) ~= "table"
-			or type(lease.Token) ~= "string"
-			or not integer(lease.Expires, 0, 100000000000)
-		then
+		if type(lease) ~= "table" or type(lease.Token) ~= "string" or not integer(lease.Expires, 0, 100000000000) then
 			return nil
 		end
 	end
-	return Schema.Copy(record.Data)
+	return Schema.Copy(data)
 end
 
 return Schema

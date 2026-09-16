@@ -211,7 +211,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local Geometry = h:load("src/LServer/Queues/QueueGeometry.luau")
+	local Geometry = h:load("src/LShared/Geometry/QueueGeometry.luau")
 	local cframe = Roblox.CFrame.new(10, 0, 0) * Roblox.CFrame.Angles(0, math.pi / 2, 0)
 	local size = Roblox.Vector3.new(8, 1, 2)
 	check(
@@ -259,7 +259,7 @@ do
 	child(panel, "TextLabel", "PlayerTitle")
 	panel.Size, panel.Position = "authored-panel-size", "authored-panel-position"
 	local created, left
-	local view = h:load("src/LClient/UI/QueueView.luau").new(gui, {
+	local view = h:load("src/LShared/UI/QueueView.luau").new(gui, {
 		clock = function()
 			return h.time
 		end,
@@ -679,7 +679,7 @@ end
 do
 	local h = Harness.Environment()
 	local active, errors, applied = nil, {}, {}
-	local requests = h:load("src/LClient/Networking/QueueRequests.luau").new({
+	local requests = h:load("src/LShared/Networking/QueueRequests.luau").new({
 		clock = function()
 			return h.time
 		end,
@@ -758,7 +758,7 @@ do
 	local iconStroke = child(icon, "UIStroke", "UIStroke")
 	iconStroke.Color = Roblox.Color3.fromRGB(58, 58, 58)
 	icon.Image = "original-story"
-	local view = h:load("src/LServer/Queues/QueueBillboard.luau").new(board)
+	local view = h:load("src/LShared/UI/QueueBillboard.luau").new(board)
 	local state = { State = "Empty", Host = "-", Mode = "Choose a mode", Count = 0, Capacity = 4 }
 	view:Render(queue, state, h.time)
 	check(

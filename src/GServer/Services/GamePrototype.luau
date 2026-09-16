@@ -115,7 +115,8 @@ function Prototype.new(services, data, session, network)
 		end
 		local action = self.world:ActionFor(self.run, player, station)
 		if action then
-			local lane = Stations.ForPlayer(self.run, player)
+			local lane = station == "Counter" and Stations.AtCounter(self.run, player)
+				or Stations.ForPlayer(self.run, player)
 			local order, event = lane.order, self.run.event
 			local ok, code = self.run:Action(player, action, {
 				Station = station,

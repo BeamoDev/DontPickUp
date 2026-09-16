@@ -8,6 +8,21 @@ function Stations.ForPlayer(run, player)
 	local member = run.players[player]
 	return run.stations[member and member.StationId or "Bench"] or run.stations.Bench
 end
+function Stations.AtCounter(run, player)
+	local selected = Stations.ForPlayer(run, player)
+	if selected.order and (selected.order.Step == "Waiting" or selected.order.Step == "Return") then
+		return selected
+	end
+	for _, step in ipairs({ "Return", "Waiting" }) do
+		for _, id in ipairs(Stations.Ids) do
+			local lane = run.stations[id]
+			if lane.order and lane.order.Step == step then
+				return lane
+			end
+		end
+	end
+	return selected
+end
 function Stations.ForOrder(run, id)
 	for _, key in ipairs(Stations.Ids) do
 		local lane = run.stations[key]

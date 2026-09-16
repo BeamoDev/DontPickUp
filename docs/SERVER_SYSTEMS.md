@@ -14,15 +14,17 @@ Authored walk-in queues are connected; see [Lobby queues](LOBBY_QUEUES.md). A [G
 | --- | --- | --- |
 | Lobby `110554757455252` | `src/LServer` | A container inside this place's `ServerScriptService` |
 | Game `111652489432168` | `src/GServer` | A container inside this place's `ServerScriptService` |
+| Lobby `110554757455252` | `src/LShared` | `ReplicatedStorage.LShared` in Lobby |
+| Game `111652489432168` | `src/GShared` | `ReplicatedStorage.GShared` in Game |
 
 1. Verify both published places belong to the same experience. The supplied IDs are configured in both `Core/Config.luau` copies. Their universe relationship could not be checked from this environment.
 2. Sync the entire relevant server root, retaining `Core`, `Runtime`, and the environment-specific service. `Bootstrap.server.luau` must be a **Script**. Every other `.luau` source is a **ModuleScript**. Do not activate both roots in one place. Module requires are relative, so the container itself can sit under an existing server wrapper.
-3. Inspect Studio Script Analysis and Server Output. The bootstrap rejects the wrong published place and duplicate network creation. No source is imported from another place or from either replicated shared root.
+3. Inspect Studio Script Analysis and Server Output. The bootstrap rejects the wrong published place and duplicate network creation. The server imports public helpers from its own ReplicatedStorage.LShared or ReplicatedStorage.GShared. Never import the other place's Shared root.
 4. For the Game subplace, use Creator Dashboard's **Secure within universe only** access setting. The Game server additionally checks its own admission roster. See [Roblox secure teleportation](https://create.roblox.com/docs/projects/teleport#configure-secure-teleportation).
 5. Keep `StudioSaving = false` for practice. This makes no DataStore calls and preserves data only within the running practice server. If explicitly testing persistence in Studio, enable API access and `StudioSaving`; it uses `DontPickUp_PlayerData_v1_STUDIO`, never the production namespace.
 6. Test teleports in the published Roblox application. Roblox does not support TeleportService playtesting in Studio. [Teleport documentation](https://create.roblox.com/docs/projects/teleport)
 
-No remotes or player folders need to be manually authored. Existing client/shared roots remain available for future authored UI and client controllers.
+No remotes or player folders need to be manually authored. Client controllers and the matching Shared root must be synced with the server. Shared UI modules preserve authored Lobby instances.
 
 ## Runtime ownership
 
@@ -31,7 +33,7 @@ No remotes or player folders need to be manually authored. Existing client/share
 | `LServer/Bootstrap.server.luau` | Lobby lifecycle, request routing, one-second service scheduling |
 | `LServer/Parties/PartyService.luau` | Party roster, permissions, ready state, countdown, recovery |
 | `LServer/Queues/WorldQueueService.luau`, `QueueWorld.luau`, `QueueGeometry.luau` | Physical pad reservations, entry/exit, gathering, board and member views |
-| `LServer/Queues/QueueBillboard.luau` | Authored world sign: mode icon, host title, player count, green/amber status, legacy name fallbacks |
+| `LShared/UI/QueueBillboard.luau` | Authored world sign: mode icon, host title, player count, green/amber status, legacy name fallbacks |
 | `LClient/QueueController.local.luau`, `QueueView.luau`, `QueueRequests.luau` | Authored UI/status binding, mode/capacity draft, scoped Create/Leave requests, timeout ownership, respawn rebinding |
 | `GServer/Bootstrap.server.luau` | Admission before profile loading, Game lifecycle, return-to-Lobby request |
 | `GServer/Services/GameSession.luau` | Expected party, loaded members, all-member start gate |

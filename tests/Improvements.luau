@@ -127,6 +127,7 @@ do
 		f:advance(0.6)
 		check(f:act("Test", actor), "final test belongs to original bench")
 		f:solve(actor)
+		f:pickup(actor)
 		check(f:act("Return", actor), "independent phone returns and pays once")
 	end
 	check(f.run.repaired == 3, "training plus two independent repairs counted once")
@@ -184,7 +185,15 @@ do
 	f:start()
 	local a, b = f.run.stations.Bench, f.run.stations.Bench2
 	a.order.Step, a.order.Sensitive = "Install", true
-	b.order = { Id = "other", Step = "Install", Sensitive = true, Contributors = {}, ExpiresAt = f.h.time + 1 }
+	a.order.Phone = { Discovered = true, Installed = true, Revision = 1 }
+	b.order = {
+		Id = "other",
+		Step = "Install",
+		Sensitive = true,
+		Contributors = {},
+		ExpiresAt = f.h.time + 1,
+		Phone = { Discovered = true, Installed = true, Revision = 1 },
+	}
 	f.run:_completeWork({ Action = "Install", OrderId = a.order.Id, Player = f.p[1] }, a)
 	f.run:_completeWork({ Action = "Install", OrderId = b.order.Id, Player = f.p[2] }, b)
 	check(a.order.VoteEndsAt and not b.order.VoteEndsAt, "second evidence ballot queues without an invisible timeout")
@@ -314,7 +323,7 @@ end
 -- Request serialization, correct shared-vote ID, and queued close after an in-flight reply.
 do
 	local h = Harness.Environment()
-	local Requests = h:load("src/GClient/Networking/Requests.luau")
+	local Requests = h:load("src/GShared/Networking/Requests.luau")
 	local state = { RunId = "run", Order = { Id = "second" }, Vote = { OrderId = "first" } }
 	local _, payload = Requests.Payload(state, "Vote", "Hide")
 	check(payload.OrderId == "first", "vote request uses shared vote order rather than own repair")
@@ -485,7 +494,7 @@ do
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
 	check(#sent == 3 and not direct.hint.Parent, "world input disconnects on teardown")
 	local selection = { SelectedObject = nil }
-	local reader = h:load("src/GClient/UI/InspectionView.luau").new(gui, {
+	local reader = h:load("src/GShared/UI/InspectionView.luau").new(gui, {
 		input = input,
 		gui = selection,
 		clock = function()
@@ -571,6 +580,19 @@ do
 		"dot uses the full viewport center"
 	)
 	check(render.priority > Roblox.Enum.RenderPriority.Camera.Value, "cursor policy runs after native camera")
+	check(cursor.dot.Size == Roblox.UDim2.fromOffset(6, 6), "cursor is 1.5 times its original size")
+	cursor:SetHover(true, false)
+	cursor:Step()
+	local idleAlpha = cursor.dot.BackgroundTransparency
+	h.time += 0.6
+	cursor:Step()
+	check(cursor.dot.BackgroundTransparency < idleAlpha, "valid hover smoothly brightens the dot")
+	cursor:SetHover(true, true)
+	cursor:Step()
+	check(cursor.dot.BackgroundTransparency == 0.2, "reduced motion uses steady hover brightness")
+	cursor:SetHover(false, false)
+	cursor:Step()
+	check(cursor.dot.BackgroundTransparency == 0.45, "leaving an item restores faint cursor")
 	input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.V }, false)
 	check(
 		not cursor:IsLocked() and cursor.toggle.Modal and input.MouseBehavior == Roblox.Enum.MouseBehavior.Default,
@@ -632,6 +654,29 @@ do
 	cursor:Toggle()
 	centered:Pick(Roblox.Vector2.new(30, 40))
 	check(rays[#rays][1] == "screen" and rays[#rays][2] == 30, "free cursor keeps pointer targeting")
+	target:SetAttribute("DPU_Direct", "Part_Battery")
+	local pickup =
+		{ Alive = true, Phase = "Night", Order = { Step = "Collect", Fault = "Battery" }, Stock = { Battery = 1 } }
+	centered:Update(pickup, false)
+	check(centered.hovered, "available matching part can pulse")
+	pickup.Order.Fault = "Speaker"
+	centered:Update(pickup, false)
+	check(not centered.hovered, "another bench's enabled part cannot pulse as a valid pickup")
+	pickup.Order.Fault, pickup.CarriedPart = "Battery", "Battery"
+	centered:Update(pickup, false)
+	check(not centered.hovered, "hands already carrying a part cannot promise another pickup")
+	pickup.CarriedPart, pickup.Stock.Battery = nil, 0
+	centered:Update(pickup, false)
+	check(not centered.hovered, "empty shelf does not pulse")
+	target:SetAttribute("DPU_Direct", "Tools")
+	pickup.Kit = { Tester = true, Screwdriver = true, Cartridge = true }
+	centered:Update(pickup, false)
+	check(not centered.hovered, "complete kit does not advertise a new pickup")
+	pickup.Kit.Tester = nil
+	centered:Update(pickup, false)
+	check(centered.hovered, "missing reusable tool allows pickup hover")
+	centered:Update(pickup, true)
+	check(not centered.hovered, "menus and pending requests clear hover feedback")
 	centered:Destroy()
 	cursor:Destroy()
 	cursor:Destroy()

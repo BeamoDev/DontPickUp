@@ -148,7 +148,23 @@ return function(count, check)
 			assert(attempts < 100, "puzzle driver must terminate")
 			local puzzle = work.Puzzle
 			local move = puzzle.Answer or puzzle.Sequence and puzzle.Sequence[puzzle.Progress + 1] or 4
-			if puzzle.Kind == "Probes" then
+			if puzzle.Kind == "Phone" then
+				if puzzle.InstallAt then
+					h.time = math.max(h.time, puzzle.InstallAt)
+				end
+				if puzzle.Page == "Home" then
+					move = not puzzle.Installed and not puzzle.SkipApproved and 1
+						or (puzzle.Evidence and not puzzle.Discovered and 2 or 5)
+				elseif puzzle.Page == "Messages" then
+					move = 2
+				elseif puzzle.Page == "MessageSaved" or puzzle.Page == "Ringing" then
+					move = 2
+				elseif puzzle.Page == "Program" and puzzle.Installed then
+					move = 2
+				else
+					move = 1
+				end
+			elseif puzzle.Kind == "Probes" then
 				move = puzzle.Progress < 3 and table.find(puzzle.Tested, false) or puzzle.Answer + 3
 			elseif puzzle.Placed then
 				local item = table.find(puzzle.Placed, false)
@@ -233,6 +249,23 @@ return function(count, check)
 		end
 		self:advance(c.ArrivalSeconds)
 	end
+	function f:pickup(player)
+		local actor = player or players[1]
+		local order = run.stations[run.players[actor].StationId].order
+		self:act("Stand", actor)
+		local previous = nearby[actor]
+		nearby[actor] = "Fax"
+		self:advance(0.6)
+		check(self:act("OpenFax", actor), "open shop fax phone")
+		self:advance(0.6)
+		check(
+			self:act("DialTicket", actor, { FaxId = run.players[actor].Fax.Id, Ticket = order.Ticket }),
+			"dial collection ticket"
+		)
+		self:act("CloseFax", actor, { FaxId = run.players[actor].Fax.Id })
+		self:advance(c.ArrivalSeconds)
+		nearby[actor] = previous
+	end
 	function f:repair()
 		check(self:act("TakeOrder"), "accept customer")
 		for _, action in ipairs({ "Diagnose", "Collect", "Repair", "Install" }) do
@@ -253,6 +286,7 @@ return function(count, check)
 		self:advance(0.6)
 		check(self:act("Test"), "start final test")
 		self:advance(c.WorkSeconds)
+		self:pickup()
 		check(self:act("Return"), "return repair")
 	end
 	return f

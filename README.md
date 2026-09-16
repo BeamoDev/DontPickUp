@@ -2,11 +2,21 @@
 
 A Roblox horror game in early development. Players search through customer phones, install government malware as part of their assigned work, and decide whether to spy on private information. Investigating too far can put their life at risk.
 
-The direction is inspired by [Don't Pick Up on Steam](https://store.steampowered.com/app/4878690/). The current prototype implements repair work, fictional government-package installation, evidence choices, and night survival. Full phone browsing and the larger branching campaign remain future work.
+The direction is inspired by [Don't Pick Up on Steam](https://store.steampowered.com/app/4878690/). The prototype now includes usable customer-phone menus, government-program installation, optional messages/recordings, private calls, team decisions and night survival in a government-controlled 1980s society. See the [phone gameplay research](docs/PHONE_GAMEPLAY_RESEARCH.md) for the reference and design background. The larger authored campaign remains future work.
 
 ## Current source layout and latest changes
 
-Repair instructions now use plain language: parts are **WORKING** or **BROKEN**, and number-copy tasks show **NEXT**. Training and the first night use easy matching and short visible codes; later nights mix easy jobs with occasional harder puzzles. Sync both Game roots for these task and UI changes.
+**Usable phones and five-night Story:** after reassembly, open the customer's phone at the bench. Install **CIVIC WATCH**, browse private messages/recordings, call contacts, or answer/ignore an occasional incoming call. Installation needs an explicit check after copying finishes. Asking to skip the mandatory program opens a team vote; looking closer opens a recovered record on the phone. The fax still handles six-digit pickup tickets. Story now lasts **five nights**; Endless continues. Night two prohibits private records; night three onward also prohibits private calls. The phone log and inspector track violations. Recordings/calls use readable text; no new recorded voices are included.
+
+**Credits and Best Night:** the lobby/player list shows saved Credits and the highest night actually survived. Earn 10 Credits per contributed completed repair and 50 for surviving a night, paid once when its outcome is recorded. Lifetime repairs/survival totals remain saved. Schema 2 migrates existing profiles without resetting progress; the existing DataStore namespace stays unchanged. Sync both server roots for this profile change.
+
+**Four wire pairs:** match four numbered, colored wire inputs to four outputs using 3D dragging or the button/controller fallback. An optional BasePart/MeshPart named `ReplicatedStorage.DontPickUpTemplates.RepairWire` supplies your cable artwork: orient its length along local Z; X/Y set its thickness. It is cloned locally, tinted to the connection color and stretched between endpoints. Existing prototype cables remain the fallback.
+
+**Customer pickup:** every drop-off gets a unique six-digit ticket. Customers leave while staff repair their phones. After the final test, use the **FAX PHONE** on the counter, enter the ticket shown in its job list, and press **CALL CUSTOMER**. The customer returns after a short walk; hand the phone back at the counter to finish the order and receive payment. Both benches share the fax. Sync new `GServer/Customers/PickupService` and `GShared/UI/FaxView` with all three Game roots. The disconnected horror phone remains separate.
+
+**Shared is now required.** Sync `src/LShared` to **ReplicatedStorage.LShared in Lobby**, and `src/GShared` to **ReplicatedStorage.GShared in Game**. Twelve reusable UI, puzzle-view, request and geometry modules moved there; public repair definitions are shared by server and client. Sync Client, Server and Shared together in each place, and remove the old moved ModuleScripts listed in [SOURCE_CHANGES](docs/SOURCE_CHANGES.md). Server rules, saves and unrevealed story content remain private.
+
+Repair instructions now use plain language: parts are **WORKING** or **BROKEN**, and number-copy tasks show **NEXT**. Training and the first night use easy matching and short visible codes; later nights mix easy jobs with occasional harder puzzles. Sync all three Game roots for these task and UI changes.
 
 Game play is first person with a small, faint white dot and a centered mouse. Press **V** to unlock/relock manually; the small mouse button can relock it too. Repairs, timeclock use, notes and menus unlock automatically. Sync the complete `GClient` root. Native touch/controller input remains supported.
 
@@ -16,19 +26,19 @@ The latest direction is a simple, sometimes funny night job with optional deeper
 
 ## Current status
 
-The server foundation implements 1-4 player Lobby parties, reserved Game-server teleports, destination admission, party arrival checks, and persistent player profiles. The generated shop has two playable modes: **Story** follows three nights of linked evidence to an ending; **Endless** continues across increasingly demanding nights until the team dies or leaves. Each night lasts six minutes after briefing; only the first night includes training.
+The server foundation implements 1-4 player Lobby parties, reserved Game-server teleports, destination admission, party arrival checks, and persistent player profiles. The generated shop has two playable modes: **Story** follows five nights of linked evidence to an ending; **Endless** continues across increasingly demanding nights until the team dies or leaves. Each night lasts six minutes after briefing; only the first night includes training.
 
-**To play now:** sync `GServer` into the Game place's ServerScriptService and `GClient` into StarterPlayerScripts, then press Play. The shop and HUD generate automatically. See [Game prototype setup and controls](docs/GAME_PROTOTYPE.md).
+**To play now:** sync `GServer` into the Game place's ServerScriptService, `GClient` into StarterPlayerScripts, and `GShared` into ReplicatedStorage.GShared, then press Play. The shop and HUD generate automatically. See [Game prototype setup and controls](docs/GAME_PROTOTYPE.md).
 
 The prototype HUD uses black panels at 0.5 background transparency. **SHIFT INFO** opens repair-ticket, team and directive details on demand. Close-up controls replace the regular HUD; placeholder labels are small white text with scale sizing and a 22-stud visibility limit.
 
-The shop has a compact **main shop and back stockroom**. Two independent benches each handle every phone task, including final testing; one repair-kit pickup supplies all three reusable tools. Replacement bins share one shelf, and current objectives highlight through walls. HUD accents are off-white and muted amber; customer/radio dialogue has typed speaker-labelled subtitles with short pages and reduced-motion support. Sync new **GServer/World/ShopLayout** and **GClient/Dialogue/SubtitleView** with both Game roots. Room props are temporary labelled geometry for the builder to replace.
+The shop has a compact **main shop and back stockroom**. Two independent benches each handle every phone task, including final testing; one repair-kit pickup supplies all three reusable tools. Replacement bins share one shelf, and current objectives highlight through walls. HUD accents are off-white and muted amber; customer/radio dialogue has typed speaker-labelled subtitles with short pages and reduced-motion support. Sync new **GServer/World/ShopLayout** and **GClient/Dialogue/SubtitleView** with all three Game roots. Room props are temporary labelled geometry for the builder to replace.
 
-Repair close-ups now look down over the phone and hide your own avatar locally. Eight task types use **3D parts on the bench**: probe pads, battery cells, wire ends, ordered assembly, screen replacement, loose debris, screws and cleaning. Drag with mouse/touch; turn screws sideways and rub dirt patches. **USE BUTTONS** keeps the original controls available, with automatic controller/reduced-motion fallback. Sync new **GClient/Repair/PhysicalRepairView** and **GClient/Repair/PhysicalRepairTasks** alongside all other Game modules. These are temporary local task pieces; other players see the existing shared repair progress.
+Repair close-ups now look down over the phone and hide your own avatar locally. Eight task types use **3D parts on the bench**: probe pads, battery cells, wire ends, ordered assembly, screen replacement, loose debris, screws and cleaning. Drag with mouse/touch; turn screws sideways and rub dirt patches. **USE BUTTONS** keeps the original controls available, with automatic controller/reduced-motion fallback. Sync new **GShared/Repair/PhysicalRepairView** and **GShared/Repair/PhysicalRepairTasks** alongside all other Game modules. These are temporary local task pieces; other players see the existing shared repair progress.
 
 Players spawn outside and inspect the timeclock: the camera zooms in and a button stamps their arrival. Repairs require collecting one kit containing the tester, screwdriver and software cartridge, then fetching each replacement part as needed. Task controls guide diagnosis, fitting, circuit repair, installation and final testing. Solved parts tween into place; waiting alone never solves a puzzle. Restocking uses a crate-sorting task.
 
-Repair work now includes **four screws, screen replacement, cleaning, SIM orientation, fuse matching, button/light/sound patterns, phone-number entry, part sorting, circuits, wave alignment, power balancing, broken-component removal, charger matching, ordered reassembly, debris removal and PASS/FAIL forms**, alongside battery dragging and colored wires. Each job uses a short selection of tasks. Small pickups and objects use direct click/tap/controller interaction; larger bench/counter/fuse prompts retain hold durations. Sync **all GServer and GClient**, including the new **GServer/Repair/BenchTasks** and **GClient/Repair/BenchTaskView** modules.
+Repair work now includes **four screws, screen replacement, cleaning, SIM orientation, fuse matching, button/light/sound patterns, phone-number entry, part sorting, circuits, wave alignment, power balancing, broken-component removal, charger matching, ordered reassembly, debris removal and PASS/FAIL forms**, alongside battery dragging and colored wires. Each job uses a short selection of tasks. Small pickups and objects use direct click/tap/controller interaction; larger bench/counter/fuse prompts retain hold durations. Sync **all GServer, GClient and GShared**, including the new **GServer/Repair/BenchTasks** and **GShared/Repair/BenchTaskView** modules.
 
 Explore thirteen optional records through a personal document reader, including the original timecard, tape and key-locked archive. Story preserves decisions, suspicion and discoveries between nights and resolves one of eight endings. Surviving staff ready up together to continue; dead players remain spectators until a new run. Each earned night records progress separately. Shared runs currently stay in their server and cannot be resumed after everyone leaves.
 
@@ -38,13 +48,13 @@ Attack jumpscares now have real consequences: ordinary signal/visitor scares tak
 
 Nights now start with **90 calm seconds**, followed by a harmless first interruption. A server-only director randomizes seven event types, timing, quiet gaps, and occasional personal scares. It avoids immediate repeats and limits planned scares. The face lunges with varied framing and a built-in impact sound; an optional `DontPickUpTemplates.ScareSound` overrides it. Reduced motion keeps a silent text cue.
 
-Sync **all of GServer and GClient**, including the new `EventDirector`. Studio Output prints `[DPU][Scare] COMING ...` before a hit; diagnostics default off in published servers. Puzzle inputs now reuse unchanged world bindings, and idle effects skip scene lookups. Studio rendering, frame rate, and multiplayer latency still need profiling. See [pacing and scare configuration](docs/GAME_PROTOTYPE.md#randomized-night-and-scare-debugging).
+Sync **all of GServer, GClient and GShared**, including the new `EventDirector`. Studio Output prints `[DPU][Scare] COMING ...` before a hit; diagnostics default off in published servers. Puzzle inputs now reuse unchanged world bindings, and idle effects skip scene lookups. Studio rendering, frame rate, and multiplayer latency still need profiling. See [pacing and scare configuration](docs/GAME_PROTOTYPE.md#randomized-night-and-scare-debugging).
 
 Read [Lobby queue setup](docs/LOBBY_QUEUES.md) for the exact hierarchy and Studio print preview. Admission carries versioned mode, starting-night and party-size data; the destination trusts the server ticket and loads saved profiles separately. Sync **LServer, GServer and GClient**, including `ModeRules`. Set `Core.Config.StudioGameMode` to `Story` or `Endless` in both Core copies to preview their introductions and progression in Studio.
 
-Queue entry now handles `Refs.Enter` contact immediately on the server, with bounds polling as a fallback. Sync the updated `LServer/Queues/QueueWorld` module for this change. Entry/exit uses stable standing slots, one departure deadline, visit-scoped requests, and visible status/error feedback. Sync all three Lobby client files (`QueueController`, `QueueView`, `QueueRequests`) with the updated Lobby server. World signs update directly without animations and preserve authored label sizes and text-sizing settings. An optional authored `Queue.Status` label controls notification placement; a small fallback label is supplied when absent.
+Queue entry now handles `Refs.Enter` contact immediately on the server, with bounds polling as a fallback. Sync the updated `LServer/Queues/QueueWorld` module for this change. Entry/exit uses stable standing slots, one departure deadline, visit-scoped requests, and visible status/error feedback. Sync the Lobby controller, LShared modules and updated Lobby server together. World signs update directly without animations and preserve authored label sizes and text-sizing settings. An optional authored `Queue.Status` label controls notification placement; a small fallback label is supplied when absent.
 
-The world sign binds `Icon.Bar.Gamemode`, `Icon`, `Status`, `PlayerCount`, and `Title`. Sync **LServer/Queues/QueueBillboard** and **LClient/QueueController** for this hierarchy. Older sign names remain supported. It shows `SHIFT AVAILABLE / READY` when empty, then the host's shift, live countdown, preparation, and teleport status with green/amber status text only. Background and title border colors stay authored.
+The world sign binds `Icon.Bar.Gamemode`, `Icon`, `Status`, `PlayerCount`, and `Title`. Sync **LShared/UI/QueueBillboard** and **LClient/QueueController** for this hierarchy. Older sign names remain supported. It shows `SHIFT AVAILABLE / READY` when empty, then the host's shift, live countdown, preparation, and teleport status with green/amber status text only. Background and title border colors stay authored.
 
 Local tests exercise storage failures, session ownership, party permissions, partial teleports, and concurrent load/save cleanup. Studio hierarchy, published teleports, and live persistence have not been verified. Read [the server integration guide](docs/SERVER_SYSTEMS.md) before syncing.
 
@@ -91,7 +101,7 @@ DontPickUp/
     GShared/        Game shared source
 ```
 
-Keep repository configuration and project documentation outside `src/`. Detailed documentation belongs in `docs/`, and local tests belong in `tests/`. Both shared folders remain empty; Game client code now lives in `GClient`.
+Keep repository configuration and project documentation outside `src/`. Detailed documentation belongs in `docs/`, and local tests belong in `tests/`. Public UI and repair presentation live in the corresponding Shared root; private gameplay and profile rules stay server-side.
 
 ## Development workflow
 
@@ -100,8 +110,8 @@ Follow the Roblox Script Sync workflow used by the sibling projects. No Rojo pro
 1. Read [AGENTS.md](AGENTS.md) and inspect the current source before changes.
 2. Sync `LServer` inside the Lobby's `ServerScriptService`, and `GServer` inside the Game's `ServerScriptService`. Each contains one executable `Bootstrap.server.luau` Script; every other Luau file is a ModuleScript. Preserve the `Core` subtree.
 3. Keep Lobby and Game source separate and sync each to its correct environment.
-   Sync `LClient` under the Lobby's `StarterPlayer.StarterPlayerScripts`; `QueueController.local.luau` is a LocalScript, with `UI/QueueView.luau` and `Networking/QueueRequests.luau` ModuleScripts.
-   Sync `GClient` under the Game's `StarterPlayer.StarterPlayerScripts`; `PrototypeController.local.luau` is the root LocalScript; preserve all UI, Networking, Interactions, Repair, Dialogue and Effects folders beneath the same client root.
+   Sync `LClient` under the Lobby's `StarterPlayer.StarterPlayerScripts`; `QueueController.local.luau` is a LocalScript, with `LShared/UI/QueueView.luau` and `LShared/Networking/QueueRequests.luau` ModuleScripts in `ReplicatedStorage.LShared`.
+   Sync `GClient` under the Game's `StarterPlayer.StarterPlayerScripts`; `PrototypeController.local.luau` is the root LocalScript; preserve its Interactions, Repair, Dialogue and Effects folders. Sync `GShared` to `ReplicatedStorage.GShared` for UI, Networking and shared repair presentation.
 4. Preserve authored UI, models, audio, lighting, and other place assets. Keep separate private Studio place backups; this Git repository is not a complete place backup.
 5. Run the local checks below. Use Studio Script Analysis and inspect Server and Client Output after syncing.
 
@@ -116,6 +126,8 @@ lune run tests/Concurrency.luau
 lune run tests/Queues.luau
 lune run tests/Prototype.luau
 lune run tests/Improvements.luau
+lune run tests/Pickup.luau
+lune run tests/PhoneGameplay.luau
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/SyncCore.ps1 -Check
 git diff --check
 ```

@@ -1,12 +1,18 @@
 -- Pooled task surfaces; drag previews are local and send one discrete move on release.
-local Extra = require(script.Parent.BenchTaskView)
+local Extra = require(script.Parent:WaitForChild("BenchTaskView", 30))
 local View = {}
 View.__index = View
 local ACCENT, WHITE, BLACK = Color3.fromRGB(220, 213, 200), Color3.fromRGB(235, 235, 235), Color3.new(0, 0, 0)
-local KINDS = { Probes = true, BatteryFit = true, Wires = true, Circuit = true, Dials = true, Memory = true }
-local NAMES = { "BATTERY", "SPEAKER", "KEYPAD" }
+local Public = require(script.Parent:WaitForChild("Definitions", 30))
+local KINDS = Public.TaskKinds
+local NAMES = Public.PartNames
 local MARKS = { "A / +", "B / -", "C / +" }
-local COLORS = { Color3.fromRGB(240, 140, 105), Color3.fromRGB(125, 185, 245), Color3.fromRGB(225, 205, 115) }
+local COLORS = {
+	Color3.fromRGB(240, 140, 105),
+	Color3.fromRGB(125, 185, 245),
+	Color3.fromRGB(225, 205, 115),
+	Color3.fromRGB(135, 195, 140),
+}
 local function make(class, parent, props)
 	local object = Instance.new(class)
 	for key, value in pairs(props) do
@@ -120,7 +126,7 @@ function View.new(parent, send, deps)
 			)
 		end
 	end
-	for i = 1, 3 do
+	for i = 1, 4 do
 		self.lines[i] = make("Frame", self.root, {
 			Name = "Wire" .. i,
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -229,19 +235,21 @@ function View:Activate(i)
 		return
 	end
 	if puzzle.Kind == "Wires" or puzzle.Kind == "BatteryFit" or Extra.Pair(puzzle) then
-		if i <= 3 and self.buttons[i].Visible and (not puzzle.Placed or not puzzle.Placed[i]) then
+		local count = puzzle.Kind == "Wires" and #puzzle.Slots or 3
+		if i <= count and self.buttons[i].Visible and (not puzzle.Placed or not puzzle.Placed[i]) then
 			self.selected = i
 			self.key = nil
 			self:Render()
-		elseif i > 3 and i <= 6 and self.buttons[i].Visible and self.selected then
-			self:Submit(self.selected * 10 + i - 3)
+		elseif i > count and i <= count * 2 and self.buttons[i].Visible and self.selected then
+			self:Submit(self.selected * 10 + i - count)
 		end
 	else
 		self:Submit(i)
 	end
 end
 function View:BeginDrag(i, input)
-	if not self.root.Visible or self.busy or i > 3 or self.drag then
+	local count = self.work and self.work.Puzzle.Kind == "Wires" and #self.work.Puzzle.Slots or 3
+	if not self.root.Visible or self.busy or i > count or self.drag then
 		return
 	end
 	local puzzle = self.work.Puzzle
@@ -322,8 +330,9 @@ function View:EndDrag(input)
 		return
 	end
 	self.ignoreClickUntil = os.clock() + 0.15
-	for slot = 1, 3 do
-		local object = self.buttons[slot + 3]
+	local count = self.work.Puzzle.Kind == "Wires" and #self.work.Puzzle.Slots or 3
+	for slot = 1, count do
+		local object = self.buttons[slot + count]
 		local origin, size = object.AbsolutePosition, object.AbsoluteSize
 		if
 			object.Visible
@@ -412,8 +421,9 @@ function View:Render()
 		line.Visible = false
 	end
 	for i, button in ipairs(self.buttons) do
-		button.Visible, button.Active, button.Rotation = i <= 6, not self.busy and not watching, 0
-		if i > 6 then
+		local count = p.Kind == "Wires" and #p.Slots or 3
+		button.Visible, button.Active, button.Rotation = i <= count * 2, not self.busy and not watching, 0
+		if i > count * 2 then
 			continue
 		end
 		button.BackgroundColor3, button.TextColor3 = BLACK, WHITE
@@ -428,17 +438,17 @@ function View:Render()
 			self.dials[i].Visible = p.Kind == "Dials"
 		end
 		if p.Kind == "Wires" or p.Kind == "BatteryFit" then
-			local item = i <= 3 and i or p.Slots[i - 3]
-			button.Position = UDim2.new(i <= 3 and 0 or 0.7, 0, ((i - 1) % 3) / 3, 2)
-			button.Size = UDim2.new(0.3, 0, 1 / 3, -6)
-			button.Text = p.Kind == "Wires" and ((i <= 3 and "WIRE " or "SPACE ") .. item)
-				or ((i <= 3 and "BATTERY " or "SPACE ") .. MARKS[item])
+			local item = i <= count and i or p.Slots[i - count]
+			button.Position = UDim2.new(i <= count and 0 or 0.7, 0, ((i - 1) % count) / count, 2)
+			button.Size = UDim2.new(0.3, 0, 1 / count, -6)
+			button.Text = p.Kind == "Wires" and ((i <= count and "WIRE " or "SPACE ") .. item)
+				or ((i <= count and "BATTERY " or "SPACE ") .. MARKS[item])
 			button.TextColor3 = COLORS[item]
 			if p.Placed[item] then
 				button.Text = p.Kind == "Wires" and "CONNECTED " .. item or "FITTED " .. MARKS[item]
 				button.Active = false
 				button.TextColor3 = ACCENT
-				if p.Kind == "BatteryFit" and i <= 3 then
+				if p.Kind == "BatteryFit" and i <= count then
 					button.Visible = false
 				end
 			end
@@ -485,8 +495,8 @@ function View:Render()
 				local slot = table.find(p.Slots, item)
 				connect(
 					self.lines[item],
-					Vector2.new(size.X * 0.3, size.Y * ((item - 0.5) / 3)),
-					Vector2.new(size.X * 0.7, size.Y * ((slot - 0.5) / 3))
+					Vector2.new(size.X * 0.3, size.Y * ((item - 0.5) / #p.Slots)),
+					Vector2.new(size.X * 0.7, size.Y * ((slot - 0.5) / #p.Slots))
 				)
 			end
 		end

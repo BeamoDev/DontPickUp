@@ -1,14 +1,12 @@
 -- Pure interaction rules. Inputs carry a revision so delayed clicks cannot solve later steps.
 local Puzzles = {}
+local Phone = require(script.Parent.Parent.Customers.PhoneSession)
 local Tasks = require(script.Parent.RepairTasks)
 local Bench = require(script.Parent.BenchTasks)
-Puzzles.Gear = {
-	Diagnose = "Tester",
-	Repair = "Screwdriver",
-	Install = "Cartridge",
-	Test = "Tester",
-	Secure = "Screwdriver",
-}
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("GShared", 30)
+assert(Shared, "Sync src/GShared to ReplicatedStorage.GShared in the Game place")
+local Public = require(Shared:WaitForChild("Repair", 30):WaitForChild("Definitions", 30))
+Puzzles.Gear = Public.Gear
 local function sequence(kind, title, hint, values, labels)
 	return {
 		Kind = kind,
@@ -100,6 +98,9 @@ function Puzzles.New(action, fault, serial, length, now, expanded, easy)
 	return puzzle
 end
 function Puzzles.Input(puzzle, move, revision, now)
+	if puzzle.Kind == "Phone" then
+		return Phone.Input(puzzle, move, revision, now)
+	end
 	local ok, solved, code
 	if Bench.Is(puzzle) then
 		ok, solved, code = Bench.Input(puzzle, move, revision, now)
@@ -146,6 +147,9 @@ function Puzzles.SequenceInput(puzzle, move, revision)
 	return true, solved
 end
 function Puzzles.Snapshot(puzzle)
+	if puzzle.Kind == "Phone" then
+		return Phone.Snapshot(puzzle)
+	end
 	local result = {}
 	for key, value in pairs(puzzle) do
 		if

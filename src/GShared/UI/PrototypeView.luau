@@ -2,19 +2,17 @@ local View = {}
 View.__index = View
 local ACCENT, AMBER = Color3.fromRGB(220, 213, 200), Color3.fromRGB(193, 155, 123)
 local INK, PAPER = Color3.fromRGB(0, 0, 0), Color3.fromRGB(235, 235, 235)
-local STEP_NAMES = {
-	Arriving = "Customer on the way",
-	Waiting = "Take the phone",
-	Diagnose = "Find the broken part",
-	Collect = "Get a new part",
-	Repair = "Put in the new part",
-	Secure = "Put the phone back together",
-	Install = "Add the phone program",
-	Evidence = "Vote on the strange message",
-	Test = "Check that the phone works",
-	Return = "Give the phone back",
-}
+local Public = require(script.Parent.Parent:WaitForChild("Repair", 30):WaitForChild("Definitions", 30))
+local STEP_NAMES = Public.StepNames
 local ERRORS = {
+	ProgramInstalled = "The program is already installed.",
+	TeamDecisionFinal = "Your team has already decided for this phone.",
+	ProgramRequired = "Install the program, or ask your team to skip it.",
+	InstallingProgram = "The program is still copying. Check again in a moment.",
+	InvalidTicket = "Enter all six numbers on the ticket.",
+	TicketNotFound = "No customer has that ticket. Check the six numbers.",
+	PhoneNotReady = "Finish repairing and testing this phone first.",
+	FaxClosed = "Use the fax phone again.",
 	MissingTool = "Collect the highlighted tool before using this station.",
 	KeyRequired = "This drawer needs a small brass key. Search the shop.",
 	PuzzleChanged = "This task changed. Follow the new steps on screen.",
@@ -270,6 +268,9 @@ function View:CurrentAction()
 	if not order or state.Work or state.Vote then
 		return nil
 	end
+	if order.Step == "ReadyForPickup" then
+		return state.Seated and "Stand" or "OpenFax"
+	end
 	if order.Step == "Waiting" then
 		return "TakeOrder"
 	end
@@ -389,6 +390,7 @@ function View:Render()
 	self.use.Visible, self.use.Active = action ~= nil, not self.busy and action ~= nil
 	self.use.Text = self.busy and "PLEASE WAIT"
 		or action == "ClockIn" and "CLOCK IN"
+		or action == "OpenFax" and "USE FAX PHONE"
 		or action == "OpenClock" and "OPEN TIMECLOCK"
 		or action == "PickupTool" and "TAKE REPAIR KIT"
 		or action == "ToggleDoor" and "OPEN STAFF DOOR"
@@ -399,7 +401,7 @@ function View:Render()
 		or action == "Collect" and ("TAKE " .. string.upper(state.Order.Fault or "PART"))
 		or action == "Repair" and ("FIT " .. string.upper(state.Order.Fault or "PART"))
 		or action == "Diagnose" and "FIND THE BROKEN PART"
-		or action == "Install" and "ADD PHONE PROGRAM"
+		or action == "Install" and "OPEN CUSTOMER PHONE"
 		or action == "Test" and "CHECK THE PHONE"
 		or action == "TakeOrder" and "TAKE CUSTOMER'S PHONE"
 		or action == "Return" and "GIVE PHONE BACK"
@@ -424,7 +426,7 @@ function View:Render()
 	if state.Order then
 		local o = state.Order
 		self.orderDetails = "REPAIR TICKET "
-			.. o.Id
+			.. (o.Ticket or o.Id)
 			.. "\n\n"
 			.. o.Customer
 			.. "\n"
@@ -440,6 +442,7 @@ function View:Render()
 			.. (
 				o.Paused and "\nCustomer is waiting while we deal with the problem."
 				or o.ExpiresAt and "\nCustomer leaves in: " .. math.max(0, math.ceil(o.ExpiresAt - now)) .. "s"
+				or (o.Step == "ReadyForPickup" or o.Step == "PickupArriving" or o.Step == "Return") and "\nRepair finished. Waiting for collection."
 				or "\nTraining: take your time"
 			)
 	else
@@ -476,7 +479,8 @@ function View:Render()
 		and not state.NeedsRules
 		and not state.Event
 		and not (state.Order and state.Order.Paused)
-	local focused = state.Inspection ~= nil
+	local focused = state.Fax ~= nil
+		or state.Inspection ~= nil
 		or state.Focus ~= nil
 		or (
 			state.Work ~= nil
@@ -521,7 +525,11 @@ function View:Render()
 	self.ack.Text = intro and "START SHIFT" or state.NeedsRules and "READY" or "BACK TO WORK"
 	for choice, button in pairs(self.voteButtons) do
 		button.Visible, button.Active = vote ~= nil and vote ~= false, not self.busy
-		button.Text = string.upper(choice) .. (vote and (" (" .. state.Vote[choice] .. ")") or "")
+		local label = vote
+				and state.Vote.Purpose == "Software"
+				and ({ Report = "INSTALL PROGRAM", Hide = "SKIP PROGRAM", Investigate = "LOOK CLOSER" })[choice]
+			or ({ Report = "TELL GOVERNMENT", Hide = "KEEP SECRET", Investigate = "LOOK CLOSER" })[choice]
+		button.Text = label .. (vote and (" (" .. state.Vote[choice] .. ")") or "")
 		button.TextColor3 = vote and state.Vote.Choice == choice and ACCENT or PAPER
 		if vote and state.Vote.Choice == choice then
 			button.Text = "[ " .. button.Text .. " ]"
@@ -572,14 +580,19 @@ function View:Render()
 				.. "\n\n"
 				.. self.modalText.Text
 		end
+		self.modalText.Text ..= "\n\nPHONE LOG: " .. (state.PhoneReads or 0) .. " records read / " .. (state.PhoneCalls or 0) .. " private calls / " .. (state.RuleBreaks or 0) .. " rule breaks.\nWAGES: 10 credits per completed repair + 50 for surviving. Paid once when this night is recorded."
 	elseif intro then
 		self.modalTitle.Text, self.modalText.Text = state.Intro.Title, state.Intro.Text
 	elseif vote then
-		self.modalTitle.Text = "STRANGE MESSAGE - VOTE TOGETHER"
+		self.modalTitle.Text = state.Vote.Purpose == "Software" and "GOVERNMENT PROGRAM - TEAM VOTE"
+			or "PRIVATE MESSAGE - TEAM VOTE"
 		self.modalText.Text = state.Vote.Message
-			.. "\n\nREPORT: tell the government. They trust you more, but the customer may be in danger.\nHIDE: keep it secret. The government trusts you less.\nINVESTIGATE: look for more clues. The government trusts you even less.\n\n"
+			.. (state.Vote.Purpose == "Software" and "\n\nINSTALL: obey the rule.\nSKIP: leave the program off; suspicion rises.\nLOOK CLOSER: leave it off and open a recovered record; suspicion rises further.\n\n" or "\n\nTELL GOVERNMENT: report the message. The customer may be in danger.\nKEEP SECRET: hide it; suspicion rises.\nLOOK CLOSER: open the recovered record; suspicion rises further.\n\n")
 			.. math.max(0, math.ceil(state.Vote.EndsAt - now))
-			.. "s left. Most votes wins. No votes means REPORT. A tie picks REPORT first, then HIDE."
+			.. (
+				state.Vote.Purpose == "Software" and "s left. No votes/ties prefer INSTALL, then SKIP."
+				or "s left. No votes/ties prefer TELL GOVERNMENT, then KEEP SECRET."
+			)
 	elseif rules then
 		self.modalTitle.Text = state.NeedsRules and "YOUR NIGHT JOB" or "SHIFT INFO"
 		self.modalText.Text = (state.Rules or "Loading tonight's rules...")

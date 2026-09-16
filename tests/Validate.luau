@@ -13,7 +13,7 @@ local Store = h:load(root .. "SessionStore.luau")
 
 check(Schema.Validate(Schema.Default()), "default schema valid")
 local invalid = Schema.Default()
-invalid.Version = 2
+invalid.Version = 3
 check(not Schema.Validate(invalid), "future schema rejected")
 invalid = Schema.Default()
 invalid.Stats.Deaths = 0 / 0
@@ -243,19 +243,59 @@ local function references(folder)
 		if fs.isDir(path) then
 			references(path)
 		elseif name:match("%.luau$") then
-			for expression in fs.readFile(path):gmatch("require%(([%w_%.]+)%)") do
+			local source = fs.readFile(path)
+			if source:find("local Shared =", 1, true) then
+				local rootName = path:match("^src/([LG])") .. "Shared"
+				check(
+					source:find(':WaitForChild("' .. rootName .. '", 30)', 1, true),
+					path .. " must use ReplicatedStorage." .. rootName
+				)
+			end
+			source = source:gsub(':WaitForChild%("([%w_]+)"%s*,%s*%d+%)', ".%1")
+			for expression in source:gmatch("require%(([%w_%.]+)%)") do
 				local base, rest = expression:match("^(%w+)%.(.+)$")
-				if base == "script" or base == "root" then
-					local target = base == "script" and path:gsub("%.luau$", "") or folder
+				if base == "script" or base == "root" or base == "Shared" then
+					local target = base == "script" and path:gsub("%.luau$", "")
+						or base == "Shared" and ("src/" .. path:match("^src/([LG])") .. "Shared")
+						or folder
 					for segment in rest:gmatch("[^%.]+") do
 						target = segment == "Parent" and target:match("^(.*)/[^/]+$") or target .. "/" .. segment
 					end
 					check(fs.isFile(target .. ".luau"), path .. " unresolved import " .. expression)
+					local sharedRoot = path:match("^(src/[LG]Shared)/")
+					if sharedRoot then
+						check(
+							target:sub(1, #sharedRoot + 1) == sharedRoot .. "/",
+							path .. " imports outside its public Shared root"
+						)
+					end
 				end
 			end
 		end
 	end
 end
 references("src")
+for _, environment in ipairs({ "L", "G" }) do
+	local function publicModules(folder)
+		for _, name in ipairs(fs.readDir(folder)) do
+			local path = folder .. "/" .. name
+			if fs.isDir(path) then
+				publicModules(path)
+			else
+				check(
+					not name:match("%.server%.luau$") and not name:match("%.local%.luau$"),
+					"Shared contains only ModuleScripts: " .. path
+				)
+			end
+		end
+	end
+	publicModules("src/" .. environment .. "Shared")
+end
+local public = h:load("src/GShared/Repair/Definitions.luau")
+check(table.isfrozen(public) and table.isfrozen(public.Gear), "public definitions cannot become mutable run state")
+check(
+	public.NextStep.Repair == "Secure" and public.Gear.Secure == "Screwdriver",
+	"shared repair definitions preserve the required work sequence"
+)
 local compiled = Harness.Compile("src") + Harness.Compile("tests")
 print(string.format("PASS: %d regression checks; %d Luau files compiled.", total, compiled))

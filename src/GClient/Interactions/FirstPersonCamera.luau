@@ -24,7 +24,7 @@ function FirstPersonCamera.new(parent, player, input, deps)
 	self.overlay = overlay
 	local dot = Instance.new("Frame")
 	dot.Name = "Dot"
-	dot.Size = UDim2.fromOffset(4, 4)
+	dot.Size = UDim2.fromOffset(6, 6)
 	dot.AnchorPoint = Vector2.new(0.5, 0.5)
 	dot.BackgroundColor3 = Color3.new(1, 1, 1)
 	dot.BackgroundTransparency = 0.45
@@ -110,6 +110,13 @@ function FirstPersonCamera:Step()
 		or self.manualFree and "V - LOCK MOUSE"
 		or "V - UNLOCK MOUSE"
 	self.dot.Visible = mouse and not self.systemUI
+	local hovering = self.hovered and self.dot.Visible and not self.autoFree
+	if hovering then
+		local elapsed = (self.d.clock or os.clock)() - self.hoverStarted
+		self.dot.BackgroundTransparency = self.reduceHover and 0.2 or 0.3 + 0.15 * math.cos(elapsed * math.pi * 2 / 1.2)
+	else
+		self.dot.BackgroundTransparency = 0.45
+	end
 	if mouse then
 		input.MouseBehavior = self.locked and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
 		input.MouseIconEnabled = self.systemUI
@@ -130,6 +137,13 @@ end
 
 function FirstPersonCamera:IsLocked()
 	return self.locked == true
+end
+
+function FirstPersonCamera:SetHover(hovered, reduced)
+	if hovered and not self.hovered then
+		self.hoverStarted = (self.d.clock or os.clock)()
+	end
+	self.hovered, self.reduceHover = hovered == true, reduced == true
 end
 
 function FirstPersonCamera:Destroy()

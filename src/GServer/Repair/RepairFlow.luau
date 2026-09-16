@@ -6,6 +6,7 @@ local Puzzles = require(script.Parent.WorkPuzzles)
 local Conversations = require(script.Parent.Parent.Customers.Conversations)
 local Modes = require(script.Parent.Parent.Shifts.ModeRules)
 local Definitions = require(script.Parent.Parent.Shifts.ShiftDefinitions)
+local Pickup = require(script.Parent.Parent.Customers.PickupService)
 local WORK = Definitions.WORK
 local BENCHES = Definitions.BENCHES
 function Methods:_newOrder(tutorial, lane)
@@ -27,6 +28,7 @@ function Methods:_newOrder(tutorial, lane)
 	local job = Catalog.Job(source, self.d.random or math.random, tutorial, self.night)
 	lane.order = {
 		Id = tostring(self.serial),
+		Ticket = Pickup.Issue(self),
 		StationId = lane.Id,
 		Customer = source.Name,
 		Fault = job.Fault,
@@ -90,18 +92,42 @@ function Methods:_resolveVote(lane)
 	table.insert(self.decisions, choice)
 	if choice == "Report" then
 		self.suspicion = math.max(0, self.suspicion - 15)
-		self:_notice("Report filed. The customer's name has been added to a government list.")
+		self:_notice(
+			order.VotePurpose == "Software" and "Team chose to install. Connect the cartridge to finish the job."
+				or "Report filed. The customer's name has been added to a government list."
+		)
 	elseif choice == "Hide" then
 		self.suspicion = math.min(100, self.suspicion + 20)
-		self:_notice("The message is hidden. The customer may be safe, but the records no longer match.")
+		self:_notice(
+			order.VotePurpose == "Software"
+					and "Team chose to skip CIVIC WATCH. The Ministry will notice the missing update."
+				or "The message is hidden. The customer may be safe, but the records no longer match."
+		)
 	else
 		self.suspicion = math.min(100, self.suspicion + 30)
-		self:_notice("Recovered: " .. (order.Evidence and order.Evidence.Discovery or "Ward 7 is still occupied."))
+		self:_notice("Team chose to look closer. Open the customer phone to read the recovered record.")
 		for _, player in ipairs(living) do
-			self.d.evidence(player, order.Evidence and order.Evidence.Id or "prototype_ward7")
+			if order.Evidence and order.Phone and order.Phone.Discovered then
+				self.d.evidence(player, order.Evidence.Id)
+			end
 		end
 	end
 	order.Step, order.Votes = "Test", nil
+	if order.Phone then
+		local phone = order.Phone
+		phone.DecisionResolved, phone.RequestSkip = true, false
+		if order.VotePurpose == "Software" then
+			phone.SkipApproved = choice ~= "Report"
+			if choice ~= "Report" then
+				self.ruleBreaks = (self.ruleBreaks or 0) + 1
+			end
+		end
+		if choice == "Investigate" or (not phone.Installed and not phone.SkipApproved) then
+			phone.Page = choice == "Investigate" and "Archive" or "Program"
+			phone.Revision += 1
+			order.Step = "Install"
+		end
+	end
 	self.voteOrderId = nil
 	local nextVote = Stations.Voting(self)
 	if nextVote then
@@ -134,17 +160,29 @@ function Methods:_completeWork(work, lane)
 	member.Actions += 1
 	if work.Action == "Repair" then
 		order.PartDelivered = false
+	elseif work.Action == "Test" then
+		order.ExpiresAt = nil -- Finished phones wait safely for their collection call.
+		Stations.Stand(self, lane)
+		self:_notice("Phone ready! Dial ticket " .. order.Ticket .. " on the FAX PHONE.")
 	elseif work.Action == "Secure" then
 		order.Contacts = 4
 	end
-	if work.Action == "Install" and order.Sensitive then
+	if
+		work.Action == "Install"
+		and order.Phone
+		and (order.Phone.RequestSkip or (order.Phone.Discovered and not order.Phone.DecisionResolved))
+	then
+		order.VotePurpose = order.Phone.RequestSkip and "Software" or "Evidence"
 		local activeVote = Stations.Voting(self)
 		order.Step, order.Votes, order.VoteEndsAt = "Evidence", {}, nil
 		if not activeVote then
 			Stations.BeginVote(self, lane)
 		end
 		self:_converse(Conversations.Phone(work.Player))
-		self:_notice("A deleted message appeared during installation. Decide together.")
+		self:_notice(
+			order.VotePurpose == "Software" and "Skip the government program? Decide together."
+				or "A private message was opened. Decide together."
+		)
 	else
 		order.Step = WORK[work.Action]
 	end
@@ -220,6 +258,10 @@ function Methods:_tickRepair(lane, now)
 			order.Step = "Waiting"
 			self:_say(order.Customer, order.Complaint)
 			order.ExpiresAt = not order.Tutorial and now + order.Patience or nil
+			self:_publish()
+		elseif order.Step == "PickupArriving" and not order.PausedAt and now >= order.PickupAt then
+			order.Step = "Return"
+			self:_notice(order.Customer .. " is back. Return phone " .. order.Ticket .. " at the counter.")
 			self:_publish()
 		elseif order.Step == "Evidence" then
 			self:_resolveVote(lane)

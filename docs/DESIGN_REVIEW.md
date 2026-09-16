@@ -4,7 +4,7 @@
 
 The checkout already contains modified files and new repair, subtitle, layout and outdoor-risk modules. These working versions are the baseline; no checkout/reset is part of this work.
 
-Lobby owns authored queue pads and UI, parties, profile loading, and private-server dispatch. Game admits the complete roster before starting. Each place has one bootstrap, its own remotes and a deployment copy of the server Core. LServer/Core is canonical. The shared source roots are currently empty.
+Lobby owns authored queue pads and UI, parties, profile loading, and private-server dispatch. Game admits the complete roster before starting. Each place has one bootstrap, its own remotes and a deployment copy of the server Core. LServer/Core is canonical. At this pre-refactor baseline the shared roots were empty; the later Shared migration is documented in CURRENT_ARCHITECTURE and SOURCE_CHANGES.
 
 GamePrototype adapts ShiftService to profiles, world geometry and networking. ShiftService currently owns a single order/work reservation, tutorial, night clock, votes, injuries, optional actions, outcomes and snapshots. Workshop validates real seats and Tool identities. RepairTasks/BenchTasks implement authoritative puzzles. Clients render those puzzles using button and physical presentations. Test fixtures exercise rules and mocked adapters; they do not render Roblox.
 

@@ -360,7 +360,7 @@ function Presentation:Update(state, modalOpen)
 				order.Fault or "PART"
 			))
 			or order.Step == "Secure" and ("TIGHTEN SCREWS: " .. (order.Contacts or 0) .. "/" .. (order.RequiredContacts or 4))
-			or order.Step == "Install" and "ADD THE PHONE PROGRAM"
+			or order.Step == "Install" and "OPEN THE CUSTOMER PHONE"
 			or order.Step == "Test" and "CHECK THAT THE PHONE WORKS"
 			or order.Step == "Return" and "GIVE THE PHONE BACK AT THE COUNTER"
 			or "FOLLOW THE NEXT REPAIR STEP"

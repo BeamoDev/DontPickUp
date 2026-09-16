@@ -43,7 +43,7 @@ function Methods:_scare(player, kind, announced, impact)
 			Damage = impact.Damage,
 			Reason = impact.Reason,
 		}
-		member.Focus = nil
+		member.Focus, member.Fax = nil, nil
 		self.d.stand(player)
 		Stations.CancelPlayer(self, player)
 	end
@@ -206,6 +206,9 @@ function Methods:_tickDisturbance(now)
 				end
 				if order.Step == "Arriving" then
 					order.ArrivesAt = now + self.c.ArrivalSeconds
+				end
+				if order.Step == "PickupArriving" then
+					order.PickupAt = now + self.c.ArrivalSeconds
 				end
 				order.PausedAt = nil
 			end

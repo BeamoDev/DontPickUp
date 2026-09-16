@@ -1,5 +1,6 @@
 -- Presentation descriptors only. The existing server puzzle rules validate every move.
 local Tasks = {}
+local Public = require(script.Parent:WaitForChild("Definitions", 30))
 local supported = {
 	BatteryFit = true,
 	Wires = true,
@@ -10,7 +11,12 @@ local supported = {
 	Clean = true,
 	Probes = true,
 }
-local colors = { Color3.fromRGB(197, 116, 90), Color3.fromRGB(115, 161, 188), Color3.fromRGB(196, 178, 111) }
+local colors = {
+	Color3.fromRGB(197, 116, 90),
+	Color3.fromRGB(115, 161, 188),
+	Color3.fromRGB(196, 178, 111),
+	Color3.fromRGB(135, 195, 140),
+}
 local paper = Color3.fromRGB(216, 208, 189)
 function Tasks.Supports(p)
 	return p and supported[p.Kind] == true
@@ -29,28 +35,24 @@ function Tasks.Build(p)
 	local kind = p.Kind
 	local hint
 	if kind == "BatteryFit" or kind == "Wires" or kind == "Assembly" then
-		local names = kind == "Assembly" and { "BOARD", "BATTERY", "COVER" } or { "1 +", "2 -", "3 +" }
-		for i = 1, 3 do
+		local names = kind == "Assembly" and { "BOARD", "BATTERY", "COVER" }
+			or kind == "Wires" and { "1 RED", "2 BLUE", "3 YELLOW", "4 GREEN" }
+			or { "1 +", "2 -", "3 +" }
+		local count = #p.Slots
+		for i = 1, count do
+			local z = (i - (count + 1) / 2) * (count == 4 and 0.7 or 0.95)
 			local destination = table.find(p.Slots, i)
-			local source = add("item" .. i, "Drag", i, -1.85, (i - 2) * 0.95, names[i], { Color = colors[i] })
+			local source = add("item" .. i, "Drag", i, -1.85, z, names[i], { Color = colors[i] })
 			source.Done, source.Destination = p.Placed[i], "slot" .. destination
 			if kind == "Wires" then
-				source.Wire = Vector3.new(-2.4, 0.15, (i - 2) * 0.95)
+				source.Wire = Vector3.new(-2.4, 0.15, z)
 				source.Size = Vector3.new(0.42, 0.14, 0.42)
 			end
-			add(
-				"slot" .. i,
-				"Drop",
-				i,
-				0,
-				(i - 2) * 0.95,
-				names[p.Slots[i]],
-				{ Color = colors[p.Slots[i]], Ghost = true }
-			)
+			add("slot" .. i, "Drop", i, 0, z, names[p.Slots[i]], { Color = colors[p.Slots[i]], Ghost = true })
 		end
 		hint = kind == "Assembly"
 				and ("Next: move the " .. names[math.min(p.Progress + 1, 3)] .. " to its matching space.")
-			or kind == "Wires" and "Move each wire to the space with the same number."
+			or kind == "Wires" and "Connect all four wires. Match the color and number at both ends."
 			or "Move each battery to the space with the same label."
 	elseif kind == "Debris" then
 		for i, name in ipairs({ "COIN", "FLUFF", "CLIP" }) do
@@ -129,17 +131,10 @@ function Tasks.Build(p)
 		end
 		hint = "Hold a dirty patch and rub back and forth. Clean each patch twice."
 	elseif kind == "Probes" then
-		for i, name in ipairs({ "BATTERY", "SPEAKER", "KEYPAD" }) do
-			add("probe" .. i, "Click", i, 0, (i - 2) * 0.95, name .. "\n" .. (p.Tested[i] and p.Readings[i] or "CHECK"))
-			add(
-				"diagnosis" .. i,
-				"Click",
-				i + 3,
-				1.85,
-				(i - 2) * 0.95,
-				"REPLACE\n" .. name,
-				{ Disabled = p.Progress < 3 }
-			)
+		for i, name in ipairs(Public.PartNames) do
+			local z = (i - 2) * 0.95
+			add("probe" .. i, "Click", i, 0, z, name .. "\n" .. (p.Tested[i] and p.Readings[i] or "CHECK"))
+			add("diagnosis" .. i, "Click", i + 3, 1.85, z, "REPLACE\n" .. name, { Disabled = p.Progress < 3 })
 		end
 		hint = p.Progress < 3 and "Check the battery, speaker and keypad."
 			or "Choose REPLACE for the part marked BROKEN."

@@ -2,20 +2,23 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 assert(script:IsDescendantOf(player:WaitForChild("PlayerScripts")), "GClient must sync into StarterPlayerScripts")
-local Requests = require(script.Parent.Networking.Requests)
-local InspectionView = require(script.Parent.UI.InspectionView)
+local Shared = ReplicatedStorage:WaitForChild("GShared", 30)
+assert(Shared, "Sync src/GShared to ReplicatedStorage.GShared in the Game place")
+local Requests = require(Shared:WaitForChild("Networking", 30):WaitForChild("Requests", 30))
+local FaxView = require(Shared:WaitForChild("UI", 30):WaitForChild("FaxView", 30))
+local InspectionView = require(Shared:WaitForChild("UI", 30):WaitForChild("InspectionView", 30))
 local WorldInteraction = require(script.Parent.Interactions.WorldInteraction)
 local FirstPersonCamera = require(script.Parent.Interactions.FirstPersonCamera)
-local View = require(script.Parent.UI.PrototypeView)
+local View = require(Shared:WaitForChild("UI", 30):WaitForChild("PrototypeView", 30))
 local SubtitleView = require(script.Parent.Dialogue.SubtitleView)
 local RepairPresentation = require(script.Parent.Repair.RepairPresentation)
 local RepairAssembly = require(script.Parent.Repair.RepairAssembly)
 local ScarePresentation = require(script.Parent.Effects.ScarePresentation)
-local PuzzleView = require(script.Parent.Repair.PuzzleView)
+local PuzzleView = require(Shared:WaitForChild("Repair", 30):WaitForChild("PuzzleView", 30))
 local StationInteraction = require(script.Parent.Interactions.StationInteraction)
 local state = { Revision = -1, Phase = "Waiting" }
 local request, pending, view, presentation, assembly, scares, puzzles, stationInteraction
-local subtitles, inspection, worldInteraction
+local subtitles, inspection, worldInteraction, fax
 local stopped = false
 local connections = {}
 
@@ -28,7 +31,7 @@ local function updateRepairTasks()
 		assembly:Update(state)
 	end
 	if puzzles then
-		puzzles:Update(state, pending ~= nil, (view.modal.Visible or state.Inspection ~= nil))
+		puzzles:Update(state, pending ~= nil, (view.modal.Visible or state.Inspection ~= nil or state.Fax ~= nil))
 	end
 end
 
@@ -40,7 +43,7 @@ local function apply(snapshot)
 	if view then
 		view:SetState(state)
 		if presentation then
-			presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil))
+			presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil or state.Fax ~= nil))
 		end
 		updateRepairTasks()
 		if scares then
@@ -71,6 +74,9 @@ local requests = Requests.new({
 	error = function(code)
 		if view then
 			view:Error(code)
+			if fax then
+				fax:Error(code)
+			end
 		end
 	end,
 })
@@ -93,12 +99,21 @@ local firstPerson = FirstPersonCamera.new(view.gui, player, game:GetService("Use
 	needsPointer = function()
 		return view.modal.Visible
 			or state.Seated == true
+			or state.Fax ~= nil
 			or state.Focus ~= nil
 			or state.Inspection ~= nil
 			or (state.Work ~= nil and state.Work.Puzzle ~= nil)
 			or state.Phase == "Results"
 			or state.Alive ~= true
 	end,
+})
+fax = FaxView.new(view.gui, {
+	input = game:GetService("UserInputService"),
+	gui = guiService,
+	clock = function()
+		return workspace:GetServerTimeNow()
+	end,
+	send = send,
 })
 inspection = InspectionView.new(view.gui, {
 	input = game:GetService("UserInputService"),
@@ -146,6 +161,7 @@ subtitles = SubtitleView.new(view.gui, {
 	reduced = reducedMotion,
 })
 puzzles = PuzzleView.new(view.gui, send, {
+	storage = ReplicatedStorage,
 	input = game:GetService("UserInputService"),
 	workspace = workspace,
 	player = player,
@@ -229,6 +245,7 @@ local function cleanup()
 	subtitles:Destroy()
 	inspection:Destroy()
 	worldInteraction:Destroy()
+	fax:Destroy()
 	firstPerson:Destroy()
 	local camera = workspace.CurrentCamera
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
@@ -270,12 +287,14 @@ task.spawn(function()
 	local renderedSecond, viewport
 	while not stopped and script.Parent and view.gui.Parent do
 		requests:Tick()
-		presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil))
+		presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil or state.Fax ~= nil))
 		updateRepairTasks()
 		scares:Update(state)
 		stationInteraction:Update(state, pending ~= nil)
-		inspection:Update(state, view.modal.Visible or guiService.MenuIsOpen)
+		inspection:Update(state, view.modal.Visible or guiService.MenuIsOpen or state.Fax ~= nil)
+		fax:Update(state, view.modal.Visible or guiService.MenuIsOpen, pending ~= nil)
 		worldInteraction:Update(state, view.modal.Visible or guiService.MenuIsOpen or pending ~= nil)
+		firstPerson:SetHover(worldInteraction.hovered, reducedMotion())
 		subtitles:Update(
 			state,
 			view.modal.Visible or guiService.MenuIsOpen or state.Event ~= nil,

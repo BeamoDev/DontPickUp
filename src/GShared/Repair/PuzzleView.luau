@@ -1,7 +1,7 @@
 -- One reusable input panel. Only the work owner receives the current puzzle.
-local PhysicalView = require(script.Parent.PhysicalRepairView)
+local PhysicalView = require(script.Parent:WaitForChild("PhysicalRepairView", 30))
 local View = {}
-local TaskView = require(script.Parent.RepairTaskView)
+local TaskView = require(script.Parent:WaitForChild("RepairTaskView", 30))
 View.__index = View
 local function make(class, parent, props)
 	local item = Instance.new(class)
@@ -105,6 +105,7 @@ function View:Update(state, busy, blocked)
 	end
 	local camera = workspace.CurrentCamera
 	local compact = camera and (camera.ViewportSize.X < 900 or camera.ViewportSize.Y < 650)
+	local phone = puzzle.Kind == "Phone"
 	local advanced = TaskView.Supports(puzzle)
 	self.tasks:Update(advanced and work or nil, busy, advanced == true)
 	local short = camera and camera.ViewportSize.Y < 450
@@ -124,8 +125,12 @@ function View:Update(state, busy, blocked)
 	self.panel.AnchorPoint = Vector2.new(1, 1)
 	self.panel.Position = UDim2.new(0.98, 0, 1, -12)
 	self.panel.Size = UDim2.new(0.94, 0, 0, advanced and (short and 256 or 288) or 242)
-	self.constraint.MaxSize = Vector2.new(advanced and not compact and 520 or 390, 288)
-	self.hint.Size = UDim2.new(1, -16, 0, advanced and 52 or 86)
+	self.constraint.MaxSize =
+		Vector2.new(phone and 460 or advanced and not compact and 520 or 390, phone and 320 or 288)
+	if phone then
+		self.panel.Size = UDim2.new(0.94, 0, 0, 320)
+	end
+	self.hint.Size = UDim2.new(1, -16, 0, phone and 158 or advanced and 52 or 86)
 	self.hint.TextSize = advanced and compact and 12 or 14
 	self.title.Text = puzzle.Title
 		.. (
@@ -165,6 +170,7 @@ function View:Update(state, busy, blocked)
 	end
 	local colors = { "BLACK", "RED", "GREEN" }
 	for i, button in ipairs(self.buttons) do
+		button.Position = UDim2.new(((i - 1) % 3) / 3, 6, 0, (phone and 204 or 130) + math.floor((i - 1) / 3) * 54)
 		button.Active = not busy
 		button.Visible = not puzzle.Cells or i <= 4
 		if puzzle.Labels then

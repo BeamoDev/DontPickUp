@@ -77,6 +77,7 @@ function World.new(services, config)
 		Timeclock = { Vector3.new(18, 3, 0), Vector3.new(1.5, 2, 0.6), "TIMECLOCK / CLOCK IN" },
 		Radio = { Vector3.new(17, 3.9, 18), Vector3.new(3, 2, 1.5), "RADIO / TUNE" },
 		DeskLamp = { Vector3.new(-8.5, 4, -2), Vector3.new(0.4, 1.5, 0.4), "BENCH LAMP" },
+		Fax = { Vector3.new(-5, 3.85, -13), Vector3.new(2.8, 0.9, 2), "FAX PHONE / CALL PICKUP" },
 		Counter = { Vector3.new(0, 1.7, -13), Vector3.new(15, 3.4, 4), "TAKE / RETURN PHONES" },
 		Bench = { Vector3.new(-12, 1.5, -1), Vector3.new(9, 3, 4), "BENCH 1" },
 		Bench2 = { Vector3.new(10, 1.5, -1), Vector3.new(9, 3, 4), "BENCH 2" },
@@ -160,6 +161,13 @@ function World.new(services, config)
 			object:SetAttribute("DPU_Enabled", false)
 		end
 	end
+	local faxReceiver =
+		p("FaxReceiver", Vector3.new(2.2, 0.3, 0.45), Vector3.new(-5, 4.45, -13.55), Color3.fromRGB(38, 38, 34))
+	faxReceiver.Parent = self.stations.Fax
+	faxReceiver.CanCollide, faxReceiver.CanTouch, faxReceiver.CanQuery = false, false, false
+	local faxPaper = p("FaxPaper", Vector3.new(1.6, 0.06, 1.2), Vector3.new(-5, 4.35, -12.85), PAPER)
+	faxPaper.Parent = self.stations.Fax
+	faxPaper.CanCollide, faxPaper.CanTouch, faxPaper.CanQuery = false, false, false
 	self.doorClosed = self.stations.StaffDoor.CFrame
 	local stampButton = p("TimeclockStamp", Vector3.new(0.55, 0.3, 0.12), Vector3.new(18, 2.65, 0.37), PAPER)
 	stampButton.CanCollide, stampButton.CanTouch = false, false
@@ -209,6 +217,18 @@ function World.new(services, config)
 	local tray2 = p("ReplacementTray2", Vector3.new(0.8, 0.2, 1.1), Vector3.new(12, 3.2, -1), PAPER)
 	tray2.CanCollide, tray2.CanTouch, tray2.Transparency = false, false, 1
 	self.repairLanes.Bench2 = { phone = phone2, parts = parts2, tray = tray2, offset = 9 }
+	for id, lane in pairs(self.repairLanes) do
+		local phone = lane.phone:Clone()
+		phone.Name, phone.Parent = "CounterPhone_" .. id, folder
+		phone:PivotTo(self.origin * CFrame.new(id == "Bench" and -1.5 or 1.5, 3.4, -13))
+		lane.counterParts = {}
+		for _, object in ipairs(phone:GetDescendants()) do
+			if object:IsA("BasePart") then
+				lane.counterParts[object] = object.Transparency
+				object.Transparency, object.CanCollide, object.CanTouch = 1, false, false
+			end
+		end
+	end
 	for _, source in ipairs({ focus, camera }) do
 		local marker2 = source:Clone()
 		marker2.Parent = self.stations.Bench2
@@ -315,6 +335,9 @@ function World:Near(player, name)
 		if math.abs(inside.X) > 21.5 or inside.Z < -18.5 or inside.Z > 22.5 then
 			return false
 		end
+	end
+	if name == "Fax" then
+		distance = 5
 	end
 	if name == "Timeclock" then
 		local localPoint = self.origin:PointToObjectSpace(root.Position)
@@ -456,6 +479,7 @@ function World:ActionFor(run, player, station)
 		end
 		return order and order.Step
 	elseif station == "Counter" then
+		order = Stations.AtCounter(run, player).order
 		return order and (order.Step == "Waiting" and "TakeOrder" or order.Step == "Return" and "Return") or nil
 	elseif station == "Answer" then
 		return "Answer"
@@ -568,6 +592,7 @@ function World:Render(run)
 		actions.Radio, actions.DeskLamp = "TuneRadio", "ToggleLamp"
 		if not run.event then
 			actions.Stock = "Restock"
+			actions.Fax = "OpenFax"
 		end
 		if order and not run.event then
 			actions.Counter = order.Step == "Waiting" and "TakeOrder" or order.Step == "Return" and "Return" or nil
@@ -606,6 +631,7 @@ function World:Render(run)
 	end
 	self.actions = actions
 	local names = {
+		OpenFax = "Use fax phone",
 		OpenClock = "Open timeclock",
 		PickupTool = "Pick up",
 		Discover = "Inspect",
@@ -621,7 +647,7 @@ function World:Render(run)
 		Diagnose = "Find the broken part",
 		Collect = "Take new part",
 		Repair = "Put in new part",
-		Install = "Add phone program",
+		Install = "Open customer phone",
 		Test = "Test phone",
 		Restock = "Unpack more parts",
 		RestorePower = "Restore power",
@@ -630,7 +656,10 @@ function World:Render(run)
 	}
 	for name, prompt in pairs(self.prompts) do
 		local enabled = actions[name] ~= nil
-		local text = name == "Tools" and "Take repair kit" or names[actions[name]] or "Use"
+		local text = name == "Counter" and "Take / return phone"
+			or name == "Tools" and "Take repair kit"
+			or names[actions[name]]
+			or "Use"
 		local fault = string.match(name, "^Part_(.+)$")
 		if fault then
 			text = "Take " .. fault .. " (" .. tostring(run.stock[fault] or 0) .. ")"
@@ -659,10 +688,30 @@ end
 function World:RenderRepair(lane)
 	local view = self.repairLanes[lane.Id]
 	local order = lane.order
-	local suspended = order and order.Step == "Arriving" and order.PausedAt ~= nil
+	local present = order
+		and (
+			order.Step == "Waiting"
+			or order.Step == "Return"
+			or ((order.Step == "Arriving" or order.Step == "PickupArriving") and not order.PausedAt)
+		)
+	local suspended = not present
 	if suspended and view.customer then
-		view.customer:Destroy()
+		local customer = view.customer
+		if view.customerTween then
+			view.customerTween:Cancel()
+			view.customerTween = nil
+		end
 		view.customer, view.orderId = nil, nil
+		self.s.TweenService
+			:Create(
+				customer.PrimaryPart,
+				TweenInfo.new(3, Enum.EasingStyle.Linear),
+				{ CFrame = self.origin * CFrame.new(view.offset, 3.5, -43) }
+			)
+			:Play()
+		task.delay(3, function()
+			customer:Destroy()
+		end)
 	end
 	if order and not suspended and view.orderId ~= order.Id then
 		if view.customer then
@@ -676,28 +725,21 @@ function World:RenderRepair(lane)
 			Color3.fromRGB(coat[1], coat[2], coat[3])
 		)
 		view.customerLabel = sign(view.customer.PrimaryPart, order.Customer, Vector3.new(0, 3.6, 0))
-		self.s.TweenService
-			:Create(
-				view.customer.PrimaryPart,
-				TweenInfo.new(self.c.ArrivalSeconds, Enum.EasingStyle.Linear),
-				{ CFrame = self.origin * CFrame.new(view.offset, 3.5, -21) }
-			)
-			:Play()
-	elseif not order and view.customer then
-		local customer = view.customer
-		view.customer, view.orderId = nil, nil
-		self.s.TweenService
-			:Create(
-				customer.PrimaryPart,
-				TweenInfo.new(4, Enum.EasingStyle.Linear),
-				{ CFrame = self.origin * CFrame.new(view.offset, 3.5, -43) }
-			)
-			:Play()
-		task.delay(4, function()
-			customer:Destroy()
-		end)
+		view.customerTween = self.s.TweenService:Create(
+			view.customer.PrimaryPart,
+			TweenInfo.new(
+				(order.Step == "Waiting" or order.Step == "Return") and 0 or self.c.ArrivalSeconds,
+				Enum.EasingStyle.Linear
+			),
+			{ CFrame = self.origin * CFrame.new(view.offset, 3.5, -21) }
+		)
+		view.customerTween:Play()
 	end
-	local visible = order ~= nil and order.Step ~= "Arriving" and order.Step ~= "Waiting"
+	local atCounter = order and (order.Step == "Waiting" or order.Step == "Return")
+	for object, alpha in pairs(view.counterParts or {}) do
+		object.Transparency = atCounter and alpha or 1
+	end
+	local visible = order ~= nil and order.Step ~= "Arriving" and not atCounter
 	if visible ~= view.visible then
 		view.visible = visible
 		for object, alpha in pairs(view.parts) do

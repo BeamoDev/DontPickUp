@@ -6,6 +6,7 @@ local Puzzles = require(script.Parent.Parent.Repair.WorkPuzzles)
 local Dialogue = require(script.Parent.Parent.Services.DialogueService)
 local Modes = require(script.Parent.ModeRules)
 local Definitions = require(script.Parent.Parent.Shifts.ShiftDefinitions)
+local Engagement = require(script.Parent.Parent.Services.EngagementService)
 local OBJECTIVES = Definitions.OBJECTIVES
 function Methods:Snapshot(player)
 	local member = self.players[player]
@@ -95,12 +96,16 @@ function Methods:Snapshot(player)
 				and (not self:CanContinue() or member and member.Alive == true),
 			Roster = {},
 			Decisions = table.clone(self.decisions),
+			EmployeeReports = Engagement.PublicReports(self.employeeReports),
+			Awards = table.clone(self.awards or {}),
+			Handbook = Engagement.CollectionSnapshot(member),
 			Notice = self.noticeUntil and self.d.clock() < self.noticeUntil and self.notice or nil,
 			NoticeUntil = self.noticeUntil,
 			Objective = self.phase == "Waiting" and "Waiting for your party and saved data..."
 				or "Next customer soon. Tune the radio or restock in the STOCKROOM.",
 			SessionState = self.d.sessionState(),
 			Replay = member and member.Replay or false,
+			Signals = Engagement.Signals,
 		}
 	for other, info in pairs(self.players) do
 		table.insert(snapshot.Roster, {
@@ -111,6 +116,7 @@ function Methods:Snapshot(player)
 			Repairs = info.Repairs,
 			Replay = info.Replay,
 			Acknowledged = info.Acknowledged,
+			Signal = info.SignalUntil and self.d.clock() < info.SignalUntil and info.Signal or nil,
 		})
 	end
 	table.sort(snapshot.Roster, function(a, b)

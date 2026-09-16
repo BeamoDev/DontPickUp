@@ -14,6 +14,8 @@ function Requests.Payload(state, action, choice)
 		payload.OrderId, payload.EventId = state.Order and state.Order.Id, state.Event and state.Event.Id
 	elseif action == "Vote" then
 		payload.OrderId, payload.Choice = state.Vote and state.Vote.OrderId, choice
+	elseif action == "Signal" then
+		payload.Signal = choice
 	elseif state.Event and table.find({ "RestorePower", "Silence", "Answer", "Records" }, action) then
 		payload.EventId = state.Event.Id
 	else

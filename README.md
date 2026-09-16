@@ -14,6 +14,8 @@ The direction is inspired by [Don't Pick Up on Steam](https://store.steampowered
 
 **Customer pickup:** every drop-off gets a unique six-digit ticket. Customers leave while staff repair their phones. After the final test, use the **FAX PHONE** on the counter, enter the ticket shown in its job list, and press **CALL CUSTOMER**. The customer returns after a short walk; hand the phone back at the counter to finish the order and receive payment. Both benches share the fax. Sync new `GServer/Customers/PickupService` and `GShared/UI/FaxView` with all three Game roots. The disconnected horror phone remains separate.
 
+**The phones know the team:** later-night CIVIC WATCH records can contain clearly fictional employee reviews built only from actions performed in the current run. The shared employee board shows each staff member's current Ministry status, the results screen gives up to four funny performance awards, and SHIFT INFO tracks run-local customer/anomaly/stamp handbook totals. The compact TEAM menu sends six rate-limited authored callouts without reading player chat. These systems are server-owned by `GServer/Services/EngagementService` and never inspect external Roblox account activity.
+
 **Shared is now required.** Sync `src/LShared` to **ReplicatedStorage.LShared in Lobby**, and `src/GShared` to **ReplicatedStorage.GShared in Game**. Twelve reusable UI, puzzle-view, request and geometry modules moved there; public repair definitions are shared by server and client. Sync Client, Server and Shared together in each place, and remove the old moved ModuleScripts listed in [SOURCE_CHANGES](docs/SOURCE_CHANGES.md). Server rules, saves and unrevealed story content remain private.
 
 Repair instructions now use plain language: parts are **WORKING** or **BROKEN**, and number-copy tasks show **NEXT**. Training and the first night use easy matching and short visible codes; later nights mix easy jobs with occasional harder puzzles. Sync all three Game roots for these task and UI changes.
@@ -128,6 +130,7 @@ lune run tests/Prototype.luau
 lune run tests/Improvements.luau
 lune run tests/Pickup.luau
 lune run tests/PhoneGameplay.luau
+lune run tests/Engagement.luau
 powershell -NoProfile -ExecutionPolicy Bypass -File tests/SyncCore.ps1 -Check
 git diff --check
 ```

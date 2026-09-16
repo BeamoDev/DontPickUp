@@ -7,6 +7,7 @@ local Catalog = require(script.Parent.Parent.Customers.CustomerCatalog)
 local Endings = require(script.Parent.EndingRules)
 local Lore = require(script.Parent.Parent.Lore.LoreService)
 local Dialogue = require(script.Parent.Parent.Services.DialogueService)
+local Engagement = require(script.Parent.Parent.Services.EngagementService)
 local Director = require(script.Parent.Parent.Anomalies.EventDirector)
 local Modes = require(script.Parent.ModeRules)
 function Shift.new(deps, config)
@@ -25,6 +26,8 @@ function Shift.new(deps, config)
 		revenue = 0,
 		suspicion = 0,
 		decisions = {},
+		employeeReports = {},
+		awards = {},
 		nextSettle = 0,
 		closing = false,
 		night = 1,
@@ -49,6 +52,7 @@ function Shift:Add(player)
 		Kit = {},
 		Secrets = {},
 	}
+	Engagement.ResetMember(self.players[player], false)
 	self:_publish()
 end
 
@@ -85,6 +89,12 @@ function Shift:_living()
 end
 
 function Shift:_start(continuing)
+	if continuing then
+		self.employeeReports = Engagement.BuildReports(self)
+	else
+		self.employeeReports = {}
+	end
+	self.awards = {}
 	self.dialogue = nil
 	self.dialogueChannel:Clear()
 	self:_clearParts()
@@ -127,6 +137,7 @@ function Shift:_start(continuing)
 		member.Kit, member.Secrets, member.Focus = {}, continuing and member.Secrets or {}, nil
 		member.NextDiscovery, member.Inspection, member.StationId = nil, nil, "Bench"
 		member.Fax = nil
+		Engagement.ResetMember(member, continuing)
 		self.d.clearGear(player)
 		self.d.stand(player)
 		if alive then
@@ -182,6 +193,15 @@ function Shift:Finish(reason)
 			member.Outcome = "Survived"
 		end
 		self:_settle(player, member)
+	end
+	self.employeeReports = Engagement.BuildReports(self)
+	self.awards = Engagement.Awards(self.players)
+	for player, member in pairs(self.players) do
+		for _, award in ipairs(self.awards) do
+			if award.UserId == player.UserId then
+				Engagement.Unlock(member, "Stamps", award.Title)
+			end
+		end
 	end
 	self:_publish()
 end
@@ -266,6 +286,10 @@ function Shift:Tick()
 	for player, member in pairs(self.players) do
 		Lore.Tick(self, player, member)
 		Pickup.Tick(self, player, member)
+		if member.SignalUntil and now >= member.SignalUntil then
+			member.Signal, member.SignalUntil = nil, nil
+			self:_publish()
+		end
 		local lane = Stations.ForPlayer(self, player)
 		if
 			member.Focus

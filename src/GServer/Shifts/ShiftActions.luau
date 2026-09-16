@@ -7,6 +7,7 @@ local Puzzles = require(script.Parent.Parent.Repair.WorkPuzzles)
 local Lore = require(script.Parent.Parent.Lore.LoreService)
 local Conversations = require(script.Parent.Parent.Customers.Conversations)
 local Director = require(script.Parent.Parent.Anomalies.EventDirector)
+local Engagement = require(script.Parent.Parent.Services.EngagementService)
 local Definitions = require(script.Parent.Parent.Shifts.ShiftDefinitions)
 local WORK = Definitions.WORK
 local BENCHES = Definitions.BENCHES
@@ -67,6 +68,12 @@ function Methods:Action(player, action, payload)
 	end
 	if not self.d.ready(player) then
 		return false, "DataNotReady"
+	end
+	if action == "Signal" then
+		if not member.ClockedIn or not member.Acknowledged then
+			return false, "ReadRules"
+		end
+		return Engagement.Signal(self, player, payload.Signal)
 	end
 	if action == "SelectStation" then
 		if not member.ClockedIn or not member.Acknowledged or self.event then
@@ -192,6 +199,7 @@ function Methods:Action(player, action, payload)
 			return false, "VoteClosed"
 		end
 		order.Votes[player] = payload.Choice
+		Engagement.Add(member, "Votes")
 		self:_resolveVote(lane)
 		self:_publish()
 		return true
@@ -255,12 +263,19 @@ function Methods:Action(player, action, payload)
 		end
 		if work.Puzzle.Kind == "Phone" then
 			local p = work.Puzzle
-			self.phoneReads = (self.phoneReads or 0) + p.Reads - beforeReads
-			self.phoneCalls = (self.phoneCalls or 0) + p.Calls + p.Answered - beforeCalls
-			self.ruleBreaks = (self.ruleBreaks or 0) + p.Violations - beforeViolations
+			local newReads = p.Reads - beforeReads
+			local newCalls = p.Calls + p.Answered - beforeCalls
+			local newViolations = p.Violations - beforeViolations
+			self.phoneReads = (self.phoneReads or 0) + newReads
+			self.phoneCalls = (self.phoneCalls or 0) + newCalls
+			self.ruleBreaks = (self.ruleBreaks or 0) + newViolations
+			Engagement.Add(member, "Records", newReads)
+			Engagement.Add(member, "Calls", newCalls)
+			Engagement.Add(member, "RuleBreaks", newViolations)
 			self.suspicion = math.min(100, self.suspicion + (p.Violations - beforeViolations) * 2)
 		end
 		if work.Action == "Secure" and order and work.Puzzle.Kind == "Screws" then
+			Engagement.Add(member, "Screws", math.max(0, work.Puzzle.Progress - (order.Contacts or 0)))
 			order.Contacts = work.Puzzle.Progress
 		end
 		if solved then
@@ -345,6 +360,7 @@ function Methods:Action(player, action, payload)
 		end
 		self.d.clearPart(player)
 		member.CarriedPart, order.PartHolder, order.PartDelivered = nil, nil, true
+		Engagement.Add(member, "Parts")
 		order.Contributors[player] = true
 		self:_notice("Replacement placed at the bench. Sit down to fit it.")
 		for coworker, info in pairs(self.players) do
@@ -401,9 +417,13 @@ function Methods:Action(player, action, payload)
 			local other = self.players[contributor]
 			if other and other.Alive then
 				other.Repairs += 1
+				Engagement.Add(other, "Repairs")
 			end
 		end
 		self:_converse(Conversations.Return(order, player))
+		for contributor in pairs(order.Contributors) do
+			Engagement.Unlock(self.players[contributor], "Customers", order.CustomerId)
+		end
 		self:_clearParts(lane)
 		Stations.Stand(self, lane)
 		lane.order, lane.nextOrder = nil, self.d.clock() + self.c.BetweenCustomers

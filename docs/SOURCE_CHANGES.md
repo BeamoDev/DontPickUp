@@ -52,6 +52,7 @@ Sync both server Core folders together: schema 2 migrates schema-1 profiles, add
 | --- | --- |
 | `src/GServer/Customers/Conversations.luau` | Short ordinary, comic, unusual, government and coworker exchanges |
 | `src/GServer/Services/DialogueService.luau` | Bounded server-timed conversation sequence |
+| `src/GServer/Services/EngagementService.luau` | Fictional employee reviews, night awards, run handbook and preset team callouts |
 | `src/GServer/Lore/LoreService.luau` | Personal inspection, keys, expiry and scoped close |
 | `src/GServer/Repair/RepairStations.luau` | Independent bench state, selection and shared vote coordination |
 | `src/GServer/Repair/RepairFlow.luau` | Extracted repair lifecycle, stock recovery and work ticking |
@@ -64,6 +65,7 @@ Sync both server Core folders together: schema 2 migrates schema-1 profiles, add
 | `src/GClient/Interactions/WorldInteraction.luau` | Mouse/touch/controller direct world interaction and feedback |
 | `tests/ShiftFixture.luau` | Existing deterministic shift fixture extracted for reuse |
 | `tests/Improvements.luau` | Multi-station, lore, dialogue, request and input regressions |
+| `tests/Engagement.luau` | Employee-review privacy, award uniqueness, handbook and callout regressions |
 | `docs/DESIGN_REVIEW.md` | Before-edit architecture review and staged plan |
 | `docs/CURRENT_ARCHITECTURE.md` | Current architecture, controls, sync and manual setup |
 | `docs/SOURCE_CHANGES.md` | Complete move/change manifest |

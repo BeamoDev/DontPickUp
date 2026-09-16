@@ -6,7 +6,7 @@ local function check(value, message)
 	total += 1
 end
 local h = Harness.Environment()
-local Phone = h:load("src/GServer/Customers/PhoneSession.luau")
+local Phone = h:load("src/GServer/Prototype/Customers/PhoneSession.luau")
 local order = {
 	Customer = "Nina",
 	PuzzleSeed = 1,
@@ -257,7 +257,7 @@ do
 	check(not Schema.Validate(malformed), "negative wallet rejected")
 end
 do
-	local Tasks = h:load("src/GServer/Repair/RepairTasks.luau")
+	local Tasks = h:load("src/GServer/Prototype/Repair/RepairTasks.luau")
 	for seed = 1, 20 do
 		local p = Tasks.New("Repair", "Speaker", seed)
 		check(#p.Slots == 4 and #p.Placed == 4, "four wire entry and exit ports")

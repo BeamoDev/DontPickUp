@@ -2,6 +2,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 assert(script:IsDescendantOf(ServerScriptService), "GServer must sync inside ServerScriptService")
 local root = script.Parent
 local Config = require(root.Core.Config)
+local GameConfig = require(root.GameConfig)
 local services = {}
 for _, name in ipairs({
 	"Players",
@@ -13,14 +14,19 @@ for _, name in ipairs({
 	"TeleportService",
 	"Lighting",
 	"TweenService",
+	"Workspace",
+	"CollectionService",
 }) do
 	services[name] = game:GetService(name)
 end
 assert(services.RunService:IsStudio() or game.PlaceId == Config.GamePlaceId, "Game bootstrap in wrong place")
 local closing = false
-local data, travel, session, network, prototype
+local data, travel, session, network, prototype, interactions
 game:BindToClose(function()
 	closing = true
+	if interactions then
+		interactions:Shutdown()
+	end
 	if prototype then
 		prototype:Shutdown()
 	end
@@ -39,12 +45,34 @@ local tickets = require(root.Core.TicketStore).new(services, Config)
 travel = require(root.Core.TravelService).new(services, Config, data, tickets)
 session = require(root.Services.GameSession).new(services, Config, data, tickets)
 network = require(root.Core.Network).new(services, "Game")
-network.root:SetAttribute("PrototypeEnabled", require(root.Shifts.PrototypeConfig).Enabled)
-if require(root.Shifts.PrototypeConfig).Enabled then
-	prototype = require(root.Services.GamePrototype).new(services, data, session, network)
+network.root:SetAttribute("PrototypeEnabled", GameConfig.PrototypeEnabled)
+if GameConfig.PrototypeEnabled then
+	prototype = require(root.Prototype.Services.GamePrototype).new(services, data, session, network)
+else
+	interactions = require(root.Interactions.InteractionService).new(services, function(player)
+		return not closing and data:IsReady(player) and session:IsReady()
+	end)
 end
-require(root.Runtime).Set({ Data = data, Session = session, Travel = travel, Prototype = prototype })
+require(root.Runtime).Set({
+	Data = data,
+	Session = session,
+	Travel = travel,
+	Prototype = prototype,
+	Interactions = interactions,
+})
 network:Bind(function(player, action, payload)
+	if
+		interactions
+		and (
+			action == "ToggleContainer"
+			or action == "Drink"
+			or action == "GrabThrow"
+			or action == "ReleaseThrow"
+			or action == "CancelThrow"
+		)
+	then
+		return interactions:Request(player, action, payload)
+	end
 	if prototype and (action == "GetPrototype" or action == "PrototypeAction") then
 		return prototype:Request(player, action, payload)
 	end
@@ -93,6 +121,9 @@ local function added(player)
 end
 services.Players.PlayerRemoving:Connect(function(player)
 	joining[player] = nil
+	if interactions then
+		interactions:Remove(player)
+	end
 	if prototype then
 		prototype:Remove(player)
 	end

@@ -1,20 +1,32 @@
 # Current architecture and deployment
 
+## Active authored-world mode
+
+Lowercase `throw` is the fourth active interaction tag. ThrowInteraction coordinates held input/charge presentation, and ThrowService owns reservations, charge timing and physics. ThrowEffects creates short owned effects and temporary thrower collision filters. Grab/release/cancel use scalar payloads through the existing network; no per-frame aim/position remotes. See [THROWING](THROWING.md).
+
+World selection is tag-driven: `Drink`, `Fax`, `Container`, defined by GShared/Interactions/InteractionTags. GClient/Interactions/TaggedInteraction centrally resolves the nearest tagged ancestor using the existing hover query. GServer/Interactions/InteractionService starts TagBindings for event-driven registration anywhere inside Workspace and dispatches to ContainerService or DrinkService. Drink requests use server identity/admission/alive/range/visibility checks, reserve once, tween all parts/decals to Transparency 1, then delete after every tween completes. Tags applied before parenting, removed tags and multiple instances are supported. See [tag authoring and sync](TAGGED_INTERACTIONS.md).
+
+The active root client entrypoint is now **GameController**, coordinating containers and telephone through the existing idle hover ray. `Telephone/TelephoneInteraction` owns local phone camera/keypad presentation, and `GShared/Telephone/TelephoneConfig` owns public key mappings and relative framing. The model tagged Fax is selected from a hit on one of its descendants. The supplied InputArea.SurfaceGui.Frame.TextLabel shows local digits. No telephone remotes, calls, shared use reservations or game outcomes are implemented yet. The active close-up owns only the local camera and local avatar visibility; all are restored on exit/interruption. See [TELEPHONE](TELEPHONE.md).
+
+The prototype is archived under `GServer/Prototype`, `GClient/Prototype` and `GShared/Prototype`. `GServer/GameConfig.PrototypeEnabled = false` keeps it unloaded. Server bootstrap retains Core, GameSession, profiles and networking, and starts `GServer/Interactions/InteractionService`. The root `GClient/GameController.local.luau` owns authored container input and reuses `Interactions/FirstPersonCamera`; the archived `GClient/Prototype/PrototypeController.local.luau` returns before importing any views. Restart Play after changing the flag.
+
+`GClient/Interactions/TaggedInteraction` uses one 10 Hz hover ray plus activation checks. It first highlights the whole Model tagged Container; clicking enters a local camera view through Interactions/ModelInspection. Only then do hover and clicks target individual Box parts. Q/B/CLOSE VIEW or interruptions restore the camera. It clones the authored SelectionHighlight into the selected model or box. GShared/Interactions/InspectionFrame shares bounds-fitting math with the telephone. It creates no hint or replacement style. Server-owned direct children of a Model tagged Container named Box/Box1/etc slide by world Vector3(0,0,-0.8) from each original CFrame. Shared tuning is `GShared/Containers/ContainerConfig`. `DontPickUpGameNet.Request` accepts `ToggleContainer {Id, Revision}` through the existing scalar validation/rate limiter plus server admission, health, standing, range, line-of-sight and transition checks. No progression or rewards are added. See [setup and migration](CONTAINERS.md). The following sections describe the archived prototype unless stated otherwise.
+
 ## Player experience
 
-**Roblox-native team recognition:** `GServer/Services/EngagementService` records a small allowlist of meaningful in-run actions for presentation. It creates fictional CIVIC WATCH employee reviews, selects at most four non-duplicated funny night awards, maintains run-local handbook totals and validates six cooldown-protected preset team callouts. It never reads chat, profile payloads or external account activity. Later-night phones may expose one employee review in place of an ordinary recording; unopened observations remain server-side. The generated shop and SHIFT INFO receive only each employee's public Ministry status, while detailed observations appear only on the deliberately opened phone page. These collections are intentionally run-local cosmetics, not a new saved economy or client reward path.
+**Roblox-native team recognition:** `GServer/Prototype/Services/EngagementService` records a small allowlist of meaningful in-run actions for presentation. It creates fictional CIVIC WATCH employee reviews, selects at most four non-duplicated funny night awards, maintains run-local handbook totals and validates six cooldown-protected preset team callouts. It never reads chat, profile payloads or external account activity. Later-night phones may expose one employee review in place of an ordinary recording; unopened observations remain server-side. The generated shop and SHIFT INFO receive only each employee's public Ministry status, while detailed observations appear only on the deliberately opened phone page. These collections are intentionally run-local cosmetics, not a new saved economy or client reward path.
 
 **Phone use / five-night release scope:** Install work now opens a server-owned customer phone menu with six reusable Shared softkeys. Connect the cartridge, wait for the server's two-second copy deadline, then check installation of CIVIC WATCH. Optional messages/recordings disclose only opened content. Contact calls and incoming ANSWER/IGNORE calls have text dialogue; taking a family message changes pickup dialogue. Asking to skip installation uses the existing team-vote rules, with explicit install/skip/investigate consequences. Browsing is optional and most phones contain ordinary records. A deliberately opened clue enters the team vote on finishing; investigation reopens its recovered record. The six-digit shop fax pickup flow stays separate.
 
 Story has five chapter-specific nights. Night one allows testing/browsing; night two bans private records; night three onward bans private calls as well. Violations raise suspicion and affect inspection feedback; the summary shows record reads, private calls and violations. Calls do not cause the disconnected-phone hazard's damage or ending. This uses prototype text content, not recorded speech or a completed authored campaign.
 
-Schema 2 adds saved Credits. DataService awards 10 per contributed completed repair and 50 per survived night through once-only outcome settlement. Best Night shows HighestShift minus one (zero before any survival); lifetime totals stay separate. Old valid schema-1 records migrate without resetting existing fields; the namespace is unchanged. Deploy both Core copies together. New server module: `GServer/Customers/PhoneSession`; Shared `Repair/PuzzleView` renders its whitelisted current-page snapshot.
+Schema 2 adds saved Credits. DataService awards 10 per contributed completed repair and 50 per survived night through once-only outcome settlement. Best Night shows HighestShift minus one (zero before any survival); lifetime totals stay separate. Old valid schema-1 records migrate without resetting existing fields; the namespace is unchanged. Deploy both Core copies together. New server module: `GServer/Prototype/Customers/PhoneSession`; Shared `Repair/PuzzleView` renders its whitelisted current-page snapshot.
 
 Wires now expose four colored/numbered pairs through both physical dragging and button/controller selection. Optional `ReplicatedStorage.DontPickUpTemplates.RepairWire` accepts a BasePart or MeshPart cable authored along Z; the local adapter retains X/Y thickness and stretches/tints a clone. `tests/PhoneGameplay.luau` covers privacy, server installation timing, refusal/investigation, migration and four-wire completion. Real Studio rendering, authored cable fit and live persistence remain manual checks.
 
 Customers now drop off their phone with a six-digit ticket and leave during repairs. Finish the final test, walk to the **FAX PHONE** on the service counter, enter the ticket and press **CALL CUSTOMER**. Its list shows both benches' ticket numbers and whether each phone is ready. The owner returns after the configured arrival time; the counter hands back the eligible phone and awards payment once. Wrong, incomplete or unfinished tickets do not summon customers; repeated calls do not restart the walk. Finished phones have no repair-patience deadline. The fax unlocks the mouse and supports keyboard digits, clickable/tappable/gamepad buttons, delete/clear and Q/B close. Customer-phone browsing and private calls are available at the bench.
 
-`GServer/Customers/PickupService` owns ticket allocation, fax visits, validation and current ticket snapshots. `GShared/UI/FaxView` owns presentation only. Sync both new ModuleScripts together with updated GServer, GClient and GShared. The existing disconnected phone still handles horror calls independently. `tests/Pickup.luau` covers rules and input mocks; check actual customer walks, counter phones and keypad layout in Studio.
+`GServer/Prototype/Customers/PickupService` owns ticket allocation, fax visits, validation and current ticket snapshots. `GShared/Prototype/UI/FaxView` owns presentation only. Sync both new ModuleScripts together with updated GServer, GClient and GShared. The existing disconnected phone still handles horror calls independently. `tests/Pickup.luau` covers rules and input mocks; check actual customer walks, counter phones and keypad layout in Studio.
 
 Repair text uses short actions and WORKING/BROKEN results. Check all three parts, then choose REPLACE for the broken one. Number-copy tasks display the whole code and the next number; screen, assembly, fuse and final-check instructions change with the current step. Training and night one replace circuit/memory/dial challenges with matching and three-number copy tasks. Later nights use easy tasks for two of three order seed classes; the remaining class uses existing harder task chains. Difficulty stays stable when retrying an order. Assembly and all four screws still require real inputs. The server keeps its ownership, tools, seating and revision checks.
 
@@ -45,35 +57,33 @@ src/
     Networking/           scoped requests and timeouts
     Geometry/             pure queue bounds helper
   GServer/
-    Bootstrap.server.luau, Runtime.luau
+    Bootstrap.server.luau, Runtime.luau, GameConfig.luau
     Core/                 identical independent-place deployment copy
-    Services/             admission, prototype adapter, dialogue sequencing
-                          and server-owned social recognition
-    Shifts/               lifecycle, actions, snapshots, mode/ending rules, tuning
-    Repair/               per-bench orders, puzzles, seats, Tools, templates
-    Customers/            private customer catalog and authored conversations
-    Anomalies/            event director, outdoor risk and threat execution
-    Lore/                 private records and personal inspection rules
-    World/                generated shop and world adapter
+    Services/             GameSession admission
+    Containers/           actual server container movement/validation
+    Interactions/         tag lifecycle, dispatch and drinking
+    Prototype/            archived Services, Shifts, Repair, Customers,
+                          Anomalies, Lore and World
   GClient/
-    PrototypeController.local.luau
-    Interactions/         timeclock and direct world input
-    Repair/               camera and fitting adapters
-    Dialogue/             local subtitle typing and pagination
-    Effects/              local scare presentation/audio
+    GameController.local.luau
+    Interactions/         central tags, highlight, input and camera
+    Telephone/            local close-up, physical keypad and restoration
+    Interactions/         shared first-person cursor adapter
+    Prototype/            archived PrototypeController LocalScript,
+                          Interactions, Repair, Dialogue and Effects
   GShared/                Game ReplicatedStorage.GShared
-    Networking/           one in-flight request and scoped deferred exits
-    UI/                   reusable HUD and document reader
-    Repair/               public definitions, task views and local piece descriptions
+    Containers/           actual container configuration
+    Telephone/            public camera framing and key mappings
+    Prototype/            archived Networking, UI and Repair
 ```
 
-Executable controller scripts remain at each client root. Shared maps to **ReplicatedStorage.LShared in Lobby** and **ReplicatedStorage.GShared in Game**; do not deploy both into the same place. Shared contains reusable ModuleScripts and public definitions. Requiring them from a client still executes them on that client; QueueBillboard and QueueGeometry are called by the Lobby server. Moving source does not create a new execution service or reduce frame work by itself. Private customer/lore catalogs, puzzle generation/answers, ending rules, authoritative actions, profiles and admission stay in ServerScriptService. Existing intentional Core duplication is required by independent place deployment.
+Active controllers stay at each client root; the archived Game controller lives inside GClient/Prototype and gates its imports before creating UI. Shared maps to **ReplicatedStorage.LShared in Lobby** and **ReplicatedStorage.GShared in Game**; do not deploy both into the same place. Shared contains reusable ModuleScripts and public definitions. Requiring them from a client still executes them on that client; QueueBillboard and QueueGeometry are called by the Lobby server. Moving source does not create a new execution service or reduce frame work by itself. Private customer/lore catalogs, puzzle generation/answers, ending rules, authoritative actions, profiles and admission stay in ServerScriptService. Existing intentional Core duplication is required by independent place deployment.
 
 `ShiftService` composes cohesive method modules. Each method operates on the owning shift instance; modules contain no shared mutable run state. `RepairStations` maps players to explicit station records; `RepairFlow` receives the station record as an argument. It never temporarily swaps global order/work fields. All order IDs and work IDs remain unique within the run. Individual injuries, departure and work cancellation affect the correct operator; shared disturbances pause all orders. All living staff receive evidence votes regardless of their selected bench. Simultaneous evidence phones queue their ballots; only the visible ballot counts down, and the next gets a full response window. Profiles still store personal earned outcomes, not resumable shared campaigns.
 
 ## Network contracts
 
-The existing per-place `Core/Network` remains the server boundary. No extra remotes were added. `GShared/Networking/Requests` builds payloads and serializes calls; deferred close/stand intents retain their original run/inspection IDs. World prompts share the same token bucket before entering gameplay validation.
+The existing per-place `Core/Network` remains the server boundary. No extra remotes were added. `GShared/Prototype/Networking/Requests` builds payloads and serializes calls; deferred close/stand intents retain their original run/inspection IDs. World prompts share the same token bucket before entering gameplay validation.
 
 `PrototypeAction` still allows six scalar fields. Direct input uses `{RunId, Action="Interact", Station, OrderId?, EventId?}`. The server maps the allowlisted station to the current action, checks the submitted order/event against that player's selected bench, then validates phase, proximity, tools and seating. `SelectStation` requires a living, clocked-in, briefed player near the actual bench. Puzzle controls retain RunId, OrderId, WorkId and PuzzleRevision checks. Clients never submit completion, damage or reward claims.
 

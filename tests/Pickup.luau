@@ -69,7 +69,7 @@ do
 	check(second.Ticket ~= ticket, "parallel customers get distinct tickets")
 	check(dial(second.Ticket), "same fax can call another bench's customer")
 	check(lane.order.PickupAt == arrival, "second callback leaves first arrival unchanged")
-	local stations = f.h:load("src/GServer/Repair/RepairStations.luau")
+	local stations = f.h:load("src/GServer/Prototype/Repair/RepairStations.luau")
 	f:advance(f.c.ArrivalSeconds)
 	check(lane.order.Step == "Return" and second.Step == "Return", "both owners return after calls")
 	check(f:act("Return"), "first owner receives repaired phone")
@@ -89,7 +89,7 @@ do
 	check(f:act("OpenFax"), "fax usable after hazard")
 	f:advance(91)
 	check(f.run.players[p].Fax == nil, "unused fax visit expires")
-	local pickup = f.h:load("src/GServer/Customers/PickupService.luau")
+	local pickup = f.h:load("src/GServer/Prototype/Customers/PickupService.luau")
 	local seen = {}
 	for _ = 1, 1000 do
 		local issued = pickup.Issue(f.run)
@@ -121,7 +121,7 @@ do
 	}
 	local gui = h.env.Instance.new("ScreenGui")
 	local selection, sent = {}, {}
-	local view = h:load("src/GShared/UI/FaxView.luau").new(gui, {
+	local view = h:load("src/GShared/Prototype/UI/FaxView.luau").new(gui, {
 		input = input,
 		gui = selection,
 		clock = function()
@@ -174,7 +174,7 @@ do
 	check(not view.panel.Visible and sent[#sent][2].FaxId == "next", "menu interrupts and closes active visit")
 	view:Destroy()
 	check(disconnected and not view.panel.Parent, "fax UI and input cleaned up")
-	local requests = h:load("src/GShared/Networking/Requests.luau")
+	local requests = h:load("src/GShared/Prototype/Networking/Requests.luau")
 	local _, payload = requests.Payload({ RunId = "run" }, "DialTicket", { FaxId = "visit", Ticket = "123456" })
 	check(
 		payload.RunId == "run" and payload.Ticket == "123456" and payload.FaxId == "visit",

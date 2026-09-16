@@ -12,7 +12,7 @@ end
 -- Early phones teach visible matching/copying; later shifts retain easy jobs.
 do
 	local h = Harness.Environment()
-	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
 	local laterEasy = 0
 	for seed = 1, 30 do
 		check(puzzles.IsEasy(false, 1, seed), "all first-night phones use easy tasks")
@@ -55,7 +55,7 @@ do
 		end
 	end
 	-- Stamp itself is also used after the harder tests.
-	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
+	local bench = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
 	local stamp = bench.New("Stamp", 2, 100)
 	check(puzzles.Snapshot(stamp).Hint:find("FIX IT FIRST"), "loose wire explains the required action")
 	check(not select(2, puzzles.Input(stamp, 1, stamp.Revision, 100)), "cannot mark broken phone ready")
@@ -215,7 +215,7 @@ do
 	local f = fixture()
 	f:start()
 	f.h.env.Color3 = require("@lune/roblox").Color3
-	local Adapter = f.h:load("src/GServer/Services/GamePrototype.luau")
+	local Adapter = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
 	local world = {
 		direct = { Secret_DeskNote = true },
 		ActionFor = function()
@@ -289,8 +289,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local Conversations = h:load("src/GServer/Customers/Conversations.luau")
-	local Dialogue = h:load("src/GServer/Services/DialogueService.luau")
+	local Conversations = h:load("src/GServer/Prototype/Customers/Conversations.luau")
+	local Dialogue = h:load("src/GServer/Prototype/Services/DialogueService.luau")
 	local player = h:player(1)
 	local normal =
 		Conversations.Intake({ Id = "1", Kind = "Normal", Customer = "Customer", Complaint = "It is broken." }, player)
@@ -323,7 +323,7 @@ end
 -- Request serialization, correct shared-vote ID, and queued close after an in-flight reply.
 do
 	local h = Harness.Environment()
-	local Requests = h:load("src/GShared/Networking/Requests.luau")
+	local Requests = h:load("src/GShared/Prototype/Networking/Requests.luau")
 	local state = { RunId = "run", Order = { Id = "second" }, Vote = { OrderId = "first" } }
 	local _, payload = Requests.Payload(state, "Vote", "Hide")
 	check(payload.OrderId == "first", "vote request uses shared vote order rather than own repair")
@@ -448,7 +448,7 @@ do
 			return { Instance = target }
 		end,
 	}
-	local direct = h:load("src/GClient/Interactions/WorldInteraction.luau").new(gui, {
+	local direct = h:load("src/GClient/Prototype/Interactions/WorldInteraction.luau").new(gui, {
 		input = input,
 		workspace = world,
 		player = player,
@@ -496,7 +496,7 @@ do
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
 	check(#sent == 3 and not direct.hint.Parent, "world input disconnects on teardown")
 	local selection = { SelectedObject = nil }
-	local reader = h:load("src/GShared/UI/InspectionView.luau").new(gui, {
+	local reader = h:load("src/GShared/Prototype/UI/InspectionView.luau").new(gui, {
 		input = input,
 		gui = selection,
 		clock = function()
@@ -639,7 +639,7 @@ do
 	cursor:Toggle()
 	player.CharacterAdded:Fire()
 	check(cursor:IsLocked() and not cursor.manualFree, "respawn starts with centered camera controls")
-	local centered = h:load("src/GClient/Interactions/WorldInteraction.luau").new(gui, {
+	local centered = h:load("src/GClient/Prototype/Interactions/WorldInteraction.luau").new(gui, {
 		input = input,
 		workspace = world,
 		player = player,

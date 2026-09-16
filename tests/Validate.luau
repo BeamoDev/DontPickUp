@@ -291,7 +291,7 @@ for _, environment in ipairs({ "L", "G" }) do
 	end
 	publicModules("src/" .. environment .. "Shared")
 end
-local public = h:load("src/GShared/Repair/Definitions.luau")
+local public = h:load("src/GShared/Prototype/Repair/Definitions.luau")
 check(table.isfrozen(public) and table.isfrozen(public.Gear), "public definitions cannot become mutable run state")
 check(
 	public.NextStep.Repair == "Secure" and public.Gear.Secure == "Screwdriver",

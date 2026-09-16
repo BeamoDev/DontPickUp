@@ -274,7 +274,7 @@ do
 	f:start()
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/Services/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
 	local prototype = setmetatable({ run = f.run }, prototypeClass)
 	local stranger = f.h:player(99)
 	local response = prototype:Request(stranger, "GetPrototype", {})
@@ -494,7 +494,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
+	local catalog = h:load("src/GServer/Prototype/Customers/CustomerCatalog.luau")
 	local ids, normal = {}, 0
 	check(#catalog.Customers == 270, "customer database contains 270 unique records")
 	for _, customer in ipairs(catalog.Customers) do
@@ -553,7 +553,7 @@ do
 	check(f.run.revision > before and not f.run.stations.Bench.work, "work completion publishes immediately")
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/Services/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
 	local pushes = 0
 	f.run.dialogueChannel:Clear()
 	f.run.dialogue = nil
@@ -674,8 +674,8 @@ do
 			end,
 		},
 	}
-	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau")
-	local world = h:load("src/GServer/World/PrototypeWorld.luau").new(services, config)
+	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau")
+	local world = h:load("src/GServer/Prototype/World/PrototypeWorld.luau").new(services, config)
 	check(
 		workspace.DPU_Prototype and world.spawn.Parent == world.folder,
 		"prototype builds isolated shop and staff spawn"
@@ -904,7 +904,7 @@ do
 	check(world.actions == actions, "twenty puzzle/profile revisions cause zero unchanged-scene prompt rebuilds")
 	local playerGui = h.instance("PlayerGui")
 	local used, lobbyCalls = nil, 0
-	local view = h:load("src/GShared/UI/PrototypeView.luau").new(playerGui, {
+	local view = h:load("src/GShared/Prototype/UI/PrototypeView.luau").new(playerGui, {
 		act = function(action)
 			used = action
 		end,
@@ -1095,7 +1095,7 @@ do
 	local renderSignal, inputSignal = signal(), signal()
 	local reduced, menu = false, false
 	local tweenList = {}
-	local presentation = h:load("src/GClient/Repair/RepairPresentation.luau").new({
+	local presentation = h:load("src/GClient/Prototype/Repair/RepairPresentation.luau").new({
 		stand = function()
 			humanoid.Sit = false
 		end,
@@ -1267,7 +1267,7 @@ do
 		"stale completion cannot restore a newer close-up"
 	)
 	presentation:Destroy()
-	local testPresentation = h:load("src/GClient/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
+	local testPresentation = h:load("src/GClient/Prototype/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
 	local testState = {
 		RunId = "testing",
 		Phase = "Night",
@@ -1307,7 +1307,7 @@ do
 	local battery, tray = world.repairPhone.Battery, world.replacement
 	battery.LocalTransparencyModifier, tray.LocalTransparencyModifier = 0.2, 0.3
 	battery.Transparency, tray.Position = 0, tray.CFrame.Position
-	local assembly = h:load("src/GClient/Repair/RepairAssembly.luau").new({
+	local assembly = h:load("src/GClient/Prototype/Repair/RepairAssembly.luau").new({
 		workspace = workspace,
 		tweens = presentation.d.tweens,
 		reduced = function()
@@ -1391,7 +1391,7 @@ do
 	soundTemplate.Play = function(self)
 		self.Played = true
 	end
-	local scares = h:load("src/GClient/Effects/ScarePresentation.luau").new({
+	local scares = h:load("src/GClient/Prototype/Effects/ScarePresentation.luau").new({
 		workspace = workspace,
 		storage = services.ReplicatedStorage,
 		tweens = presentation.d.tweens,
@@ -1489,7 +1489,7 @@ do
 	check(counterfeit.Parent == backpack and not tester.Parent, "kit cleanup preserves unrelated tools")
 	counterfeit:Destroy()
 	local sent, args
-	local stationUi = h:load("src/GClient/Interactions/StationInteraction.luau").new({
+	local stationUi = h:load("src/GClient/Prototype/Interactions/StationInteraction.luau").new({
 		workspace = workspace,
 		player = p,
 		tweens = presentation.d.tweens,
@@ -1552,7 +1552,7 @@ do
 	reduced = false
 	check(not stationUi.panel.Parent and not stationUi.frame, "clock teardown disconnects input and camera callbacks")
 	local taskInput = { InputChanged = signal(), InputEnded = signal() }
-	local puzzleUi = h:load("src/GShared/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
+	local puzzleUi = h:load("src/GShared/Prototype/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
 		sent, args = action, payload
 	end, {
 		input = taskInput,
@@ -1561,7 +1561,7 @@ do
 		end,
 	})
 	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
-	local puzzleRules = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local puzzleRules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
 	local working = {
 		Alive = true,
 		Seated = true,
@@ -1650,7 +1650,7 @@ do
 		not taskUi.dials[1].Visible and taskUi.buttons[4].Visible and taskUi.buttons[1].Text == "START",
 		"task changes reset pooled geometry and reveal circuit controls"
 	)
-	local benchRules = h:load("src/GServer/Repair/BenchTasks.luau")
+	local benchRules = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
 	local function showBench(kind, seed)
 		working.Work.Id = "extra_" .. kind
 		working.Work.Puzzle = puzzleRules.Snapshot(benchRules.New(kind, seed or 3, h.time))
@@ -1742,7 +1742,7 @@ do
 	taskInput.InputEnded:Fire(finger)
 	check(sent == nil and not taskUi.root.Parent, "destroy disconnects task input and removes owned UI")
 	local subtitleRender = signal()
-	local subtitle = h:load("src/GClient/Dialogue/SubtitleView.luau").new(playerGui, {
+	local subtitle = h:load("src/GClient/Prototype/Dialogue/SubtitleView.luau").new(playerGui, {
 		clock = function()
 			return h.time
 		end,
@@ -1822,7 +1822,7 @@ do
 	local cameraReady, physicalCalls = true, 0
 	local physicalState = { RunId = "physical", Phase = "Night", Alive = true, Seated = true, SeatStation = "Bench" }
 	local physicalPuzzle, physicalMove, physicalPayload
-	local physical = h:load("src/GShared/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
+	local physical = h:load("src/GShared/Prototype/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
 		check(action == "PuzzleInput", "physical tasks use the existing scoped action")
 		physicalCalls += 1
 		physicalMove, physicalPayload = payload.Move, payload
@@ -1843,7 +1843,7 @@ do
 		end,
 	})
 	humanoid.Sit, humanoid.SeatPart = true, world.workshop.seat
-	local benchTasks = h:load("src/GServer/Repair/BenchTasks.luau")
+	local benchTasks = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
 	local function startPhysical(puzzle)
 		physicalPuzzle = puzzle
 		physicalState.Work = {
@@ -1998,7 +1998,7 @@ do
 	physical:Destroy()
 	check(not physical.hint.Parent and not physical.mode.Parent, "physical task teardown removes owned UI")
 	cameraReady = true
-	local mixed = h:load("src/GShared/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
+	local mixed = h:load("src/GShared/Prototype/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
 	mixed:Update(physicalState, false, false)
 	check(
 		mixed.physical.folder and not mixed.panel.Visible,
@@ -2036,7 +2036,7 @@ do
 	authoredPhone.Name, authoredPhone.WorldPivot, authoredPhone.Parent = "RepairPhone", Roblox.CFrame.new(), authored
 	local body = h.instance("Part")
 	body.Name, body.CFrame, body.Parent = "Body", Roblox.CFrame.new(), authoredPhone
-	local placed, release = h:load("src/GServer/Repair/RepairTemplates.luau")
+	local placed, release = h:load("src/GServer/Prototype/Repair/RepairTemplates.luau")
 		.Build(services.ReplicatedStorage, workspace, Roblox.CFrame.new(4, 5, 6))
 	release()
 	check(
@@ -2133,7 +2133,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local endings = h:load("src/GServer/Shifts/EndingRules.luau")
+	local endings = h:load("src/GServer/Prototype/Shifts/EndingRules.luau")
 	local cases = {
 		{ "missing_employee", "Died", 80, 1, { "Investigate" } },
 		{ "line_open", "Survived", 80, 1, { "Investigate" } },
@@ -2381,7 +2381,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
 	for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 		local puzzle = puzzles.New("Repair", fault, 3)
 		local wrongMove = puzzle.Placed and (10 + (table.find(puzzle.Slots, 1) % 3 + 1)) or 7
@@ -2405,8 +2405,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local Director = h:load("src/GServer/Anomalies/EventDirector.luau")
-	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").Director
+	local Director = h:load("src/GServer/Prototype/Anomalies/EventDirector.luau")
+	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").Director
 	local signatures, hadScare = {}, false
 	for seed = 1, 32 do
 		local value, rolls = seed, 0
@@ -2504,8 +2504,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local risk = h:load("src/GServer/Anomalies/OutdoorRisk.luau")
-	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").OutsideRisk
+	local risk = h:load("src/GServer/Prototype/Anomalies/OutdoorRisk.luau")
+	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").OutsideRisk
 	local rolls, exposure = 0, {}
 	local function miss()
 		rolls += 1
@@ -2743,7 +2743,7 @@ for count = 1, 4 do
 					"unanimous ready advances with a fresh action identity"
 				)
 				f.h.env.Color3 = require("@lune/roblox").Color3
-				local adapter = f.h:load("src/GServer/Services/GamePrototype.luau")
+				local adapter = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
 				check(
 					adapter.Request({ run = f.run }, f.p[1], "PrototypeAction", { RunId = oldId, Action = "Replay" }).Code
 						== "ShiftChanged",
@@ -2822,9 +2822,9 @@ end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
-	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
-	local modes = h:load("src/GServer/Shifts/ModeRules.luau")
+	local catalog = h:load("src/GServer/Prototype/Customers/CustomerCatalog.luau")
+	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	local modes = h:load("src/GServer/Prototype/Shifts/ModeRules.luau")
 	local kinds = {}
 	for _, chapter in ipairs({ "nina", "jonas", "silas" }) do
 		local deck = catalog.Deck(function(low)
@@ -2860,7 +2860,7 @@ do
 		count += 1
 	end
 	check(count >= 10, "verification labels vary independently instead of repeating six patterns")
-	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").Director
+	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").Director
 	local late = modes.Director(config, "Endless", 100)
 	check(
 		late.MaxEvents > config.MaxEvents
@@ -2935,7 +2935,7 @@ end
 -- Every new task has a bounded solution and rejects premature/stale input.
 do
 	local h = Harness.Environment()
-	local rules = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local rules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
 	for seed = 1, 24 do
 		for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 			local probe = rules.New("Diagnose", fault, seed, 4, 100)
@@ -2997,8 +2997,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
-	local rules = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local bench = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
+	local rules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
 	local kinds = {
 		"Clean",
 		"Debris",

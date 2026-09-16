@@ -37,10 +37,10 @@ No remotes or player folders need to be manually authored. Client controllers an
 | `LClient/QueueController.local.luau`, `QueueView.luau`, `QueueRequests.luau` | Authored UI/status binding, mode/capacity draft, scoped Create/Leave requests, timeout ownership, respawn rebinding |
 | `GServer/Bootstrap.server.luau` | Admission before profile loading, Game lifecycle, return-to-Lobby request |
 | `GServer/Services/GameSession.luau` | Expected party, loaded members, all-member start gate |
-| `GServer/Services/GamePrototype.luau`, `ShiftService.luau`, `PrototypeWorld.luau`, `PrototypeConfig.luau` | Playable introductory night, generated shop, server interactions, hazards, results, profile integration |
-| `GClient/PrototypeController.local.luau`, `PrototypeView.luau` | Game tutorial/HUD, vote/results interface, objective highlight, spectator camera |
-| `GServer/Repair/RepairTemplates.luau`, `GClient/Repair/RepairPresentation.luau` | Reusable phone template, local component highlights/progress, interruptible camera close-ups |
-| `GServer/Repair/Workshop.luau`, `CustomerCatalog.luau` | Physical repair chair and carried parts; 270 server-only customers, variable service requirements and chapter clues |
+| `GServer/Prototype/Services/GamePrototype.luau`, `ShiftService.luau`, `PrototypeWorld.luau`, `PrototypeConfig.luau` | Playable introductory night, generated shop, server interactions, hazards, results, profile integration |
+| `GClient/Prototype/PrototypeController.local.luau`, `PrototypeView.luau` | Game tutorial/HUD, vote/results interface, objective highlight, spectator camera |
+| `GServer/Prototype/Repair/RepairTemplates.luau`, `GClient/Prototype/Repair/RepairPresentation.luau` | Reusable phone template, local component highlights/progress, interruptible camera close-ups |
+| `GServer/Prototype/Repair/Workshop.luau`, `CustomerCatalog.luau` | Physical repair chair and carried parts; 270 server-only customers, variable service requirements and chapter clues |
 | Each `Runtime.luau` | References for other server modules after startup |
 | `Core/Config.luau` | Place IDs, limits, storage names, Studio settings |
 | `Core/ProfileSchema.luau` | Defaults, strict known-field validation, future migration entry point |

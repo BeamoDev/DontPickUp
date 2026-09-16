@@ -6,7 +6,9 @@ The direction is inspired by [Don't Pick Up on Steam](https://store.steampowered
 
 ## Current source layout and latest changes
 
-Game play is first person with an unlocked mouse cursor; hold right-click to look around. Sync `GClient/Interactions/FirstPersonCamera` with the Game controller. Repair/timeclock close-ups and native touch/controller input remain supported.
+Repair instructions now use plain language: parts are **WORKING** or **BROKEN**, and number-copy tasks show **NEXT**. Training and the first night use easy matching and short visible codes; later nights mix easy jobs with occasional harder puzzles. Sync both Game roots for these task and UI changes.
+
+Game play is first person with a small, faint white dot and a centered mouse. Press **V** to unlock/relock manually; the small mouse button can relock it too. Repairs, timeclock use, notes and menus unlock automatically. Sync the complete `GClient` root. Native touch/controller input remains supported.
 
 The latest direction is a simple, sometimes funny night job with optional deeper lore. Short authored conversations, a personal document reader, direct small-object interaction and two independent repair benches build on the existing prototype.
 
@@ -42,7 +44,7 @@ Read [Lobby queue setup](docs/LOBBY_QUEUES.md) for the exact hierarchy and Studi
 
 Queue entry now handles `Refs.Enter` contact immediately on the server, with bounds polling as a fallback. Sync the updated `LServer/Queues/QueueWorld` module for this change. Entry/exit uses stable standing slots, one departure deadline, visit-scoped requests, and visible status/error feedback. Sync all three Lobby client files (`QueueController`, `QueueView`, `QueueRequests`) with the updated Lobby server. World signs update directly without animations and preserve authored label sizes and text-sizing settings. An optional authored `Queue.Status` label controls notification placement; a small fallback label is supplied when absent.
 
-The world sign binds `Icon.Bar.Gamemode`, `Icon`, `Status`, `PlayerCount`, and `Title`. Sync **LServer/Queues/QueueBillboard** and **LClient/QueueController** for this hierarchy. Older sign names remain supported. It shows `SHIFT AVAILABLE / READY` when empty, then the host's shift, live countdown, preparation, and teleport status with matching green/amber accents.
+The world sign binds `Icon.Bar.Gamemode`, `Icon`, `Status`, `PlayerCount`, and `Title`. Sync **LServer/Queues/QueueBillboard** and **LClient/QueueController** for this hierarchy. Older sign names remain supported. It shows `SHIFT AVAILABLE / READY` when empty, then the host's shift, live countdown, preparation, and teleport status with green/amber status text only. Background and title border colors stay authored.
 
 Local tests exercise storage failures, session ownership, party permissions, partial teleports, and concurrent load/save cleanup. Studio hierarchy, published teleports, and live persistence have not been verified. Read [the server integration guide](docs/SERVER_SYSTEMS.md) before syncing.
 

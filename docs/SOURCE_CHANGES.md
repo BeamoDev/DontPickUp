@@ -84,6 +84,8 @@ Working-tree content was preserved before relocation. No compatibility wrappers 
 | `tests/Validate.luau`, `tests/Runtime.luau`, `tests/Queues.luau` | Updated source paths after moves |
 | `README.md`, `AGENTS.md`, `docs/GAME_PROTOTYPE.md`, `docs/LOBBY_QUEUES.md`, `docs/SERVER_SYSTEMS.md` | Current paths, latest direction, deployment and validation boundaries |
 
-The two server bootstraps and Lobby client controller also have updated imports. All other moved modules retain their existing behavior apart from updated imports/formatting. Core remains byte-for-byte identical between places; no persistence schema, store name, place ID, authored Lobby layout or authored asset changed. The pre-existing removal of QueueBillboardMotion remains in place.
+The two server bootstraps and Lobby client controller also have updated imports. Core remains byte-for-byte identical between places; no persistence schema, store name, place ID, authored Lobby layout or authored asset changed. The pre-existing removal of QueueBillboardMotion remains in place.
+
+Later Game updates add `Interactions/FirstPersonCamera` and simplify player-facing text across repair rules/views, job requirements, objectives, world prompts and nightly briefings. `WorkPuzzles.IsEasy` and `ShiftActions` select short visible-code tasks throughout night one and for two of three later order seed classes. The harder puzzle types remain available. `tests/Improvements.luau` covers that difficulty mix, plain diagnosis results and final-check actions; `tests/Prototype.luau` covers full repairs with the updated tasks. These changes require both Game roots to be synced.
 
 The local Lune executable is in ignored `.tools/lune/`; it and temporary refactor helpers are not runtime source or required dependencies. No commit, push, sync or publication was performed.

@@ -36,16 +36,16 @@ function Modes.Intro(mode, night)
 			.. night
 			.. " OF "
 			.. Modes.StoryNights
-			.. ". Clock in, read the directive, and work together.",
+			.. ". Clock in, read the rules, and work together.",
 	}
 end
 function Modes.Customer(mode, night)
 	return mode == "Story" and chapters[math.min(night, #chapters)].Customer or nil
 end
 function Modes.Directive(base, mode, night)
-	return base:gsub("NIGHT DIRECTIVE 01", "NIGHT DIRECTIVE " .. string.format("%02d", night))
-		.. (mode == "Endless" and "\nENDLESS DUTY: survive until dawn; remaining staff ready up together for the next night." or "\nSTORY DUTY: decisions and discovered records carry through all three nights.")
-		.. "\nSERVICE BULLETIN: use each device's own contact count and verification label. Last customer's answers may not work."
+	return base:gsub("TONIGHT'S RULES 01", "TONIGHT'S RULES " .. string.format("%02d", night))
+		.. (mode == "Endless" and "\nENDLESS: reach 6 AM. Everyone still alive can choose to play the next night." or "\nSTORY: your choices and the notes you find still count on the next night.")
+		.. "\nREPAIR TIP: follow the instructions on this phone. Each phone can have a different answer."
 end
 function Modes.Director(base, mode, night)
 	local result = table.clone(base)

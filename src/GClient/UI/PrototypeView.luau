@@ -2,10 +2,22 @@ local View = {}
 View.__index = View
 local ACCENT, AMBER = Color3.fromRGB(220, 213, 200), Color3.fromRGB(193, 155, 123)
 local INK, PAPER = Color3.fromRGB(0, 0, 0), Color3.fromRGB(235, 235, 235)
+local STEP_NAMES = {
+	Arriving = "Customer on the way",
+	Waiting = "Take the phone",
+	Diagnose = "Find the broken part",
+	Collect = "Get a new part",
+	Repair = "Put in the new part",
+	Secure = "Put the phone back together",
+	Install = "Add the phone program",
+	Evidence = "Vote on the strange message",
+	Test = "Check that the phone works",
+	Return = "Give the phone back",
+}
 local ERRORS = {
 	MissingTool = "Collect the highlighted tool before using this station.",
 	KeyRequired = "This drawer needs a small brass key. Search the shop.",
-	PuzzleChanged = "The work changed. Use the current puzzle panel.",
+	PuzzleChanged = "This task changed. Follow the new steps on screen.",
 	FocusChanged = "Inspect the timeclock again to clock in.",
 	AlreadyClockedIn = "Your timecard is already stamped for this shift.",
 	InvalidInput = "Use the highlighted controls.",
@@ -13,24 +25,24 @@ local ERRORS = {
 	StandFirst = "Stand up and walk into the parts room first.",
 	SitFirst = "Sit in the repair chair before working on the phone.",
 	BenchOccupied = "A teammate is using the repair chair. You can bring them a part.",
-	MissingPart = "Bring the correct replacement tool and place it at the bench first.",
+	MissingPart = "Bring the marked part to the bench and put it down first.",
 	WrongPart = "Check the repair ticket and collect the matching part.",
 	AlreadyCarrying = "Place your carried part at the bench first.",
-	DisturbanceActive = "Service is paused. Deal with the disturbance first.",
+	DisturbanceActive = "Repairs are paused. Follow the warning on screen first.",
 	MoveCloser = "Move closer to the marked station.",
-	WrongStep = "Complete the current repair step first.",
-	OrderChanged = "The order changed. Follow the current objective.",
-	EventChanged = "That disturbance has already ended.",
+	WrongStep = "Finish the step shown on screen first.",
+	OrderChanged = "There is a new phone. Follow the new instructions.",
+	EventChanged = "That problem is already over.",
 	WorkInProgress = "Someone is already working. Stay nearby until they finish.",
-	NoPower = "Restore the fuse box before installing or testing.",
+	NoPower = "Use the fuse box to turn the lights back on first.",
 	OutOfStock = "Use PARTS to restock first.",
-	ReadRules = "Read and acknowledge the directive first.",
+	ReadRules = "Read tonight's rules, then press READY.",
 	DataNotReady = "Waiting for your saved data.",
 	PleaseWait = "Please wait a moment.",
 	RateLimited = "Please wait a moment.",
 	RequestPending = "Please wait for the current request.",
 	StockFull = "There are already enough spare parts.",
-	ShiftClosed = "Your shift is over. Wait for the team's results.",
+	ShiftClosed = "Your shift is over. Wait for your team to finish.",
 	ShiftChanged = "A new shift has started.",
 	NotReady = "Wait for your progress to be recorded.",
 	VoteClosed = "Voting has ended.",
@@ -155,24 +167,17 @@ function View.new(playerGui, actions)
 	})
 	self.modalText = label(scroll, "Text", UDim2.new(), UDim2.new(1, -8, 0, 0), 18)
 	self.modalText.AutomaticSize = Enum.AutomaticSize.Y
-	self.ack = button(
-		self.modal,
-		"Acknowledge",
-		"I UNDERSTAND / BEGIN",
-		UDim2.new(0, 16, 1, -60),
-		UDim2.new(1, -32, 0, 44),
-		function()
-			if self.introVisible then
-				self.introSeen = self.state.RunId
-				self:Render()
-			elseif self.state.NeedsRules then
-				self.actions.act("ReadRules")
-			else
-				self.rulesOpen = false
-				self:Render()
-			end
+	self.ack = button(self.modal, "Acknowledge", "READY", UDim2.new(0, 16, 1, -60), UDim2.new(1, -32, 0, 44), function()
+		if self.introVisible then
+			self.introSeen = self.state.RunId
+			self:Render()
+		elseif self.state.NeedsRules then
+			self.actions.act("ReadRules")
+		else
+			self.rulesOpen = false
+			self:Render()
 		end
-	)
+	end)
 	self.voteButtons = {}
 	for i, choice in ipairs({ "Report", "Hide", "Investigate" }) do
 		self.voteButtons[choice] = button(
@@ -346,7 +351,7 @@ function View:Render()
 		objective ..= "\nPart: " .. state.Order.Fault
 	end
 	if state.CarriedPart then
-		objective = "CARRYING: " .. state.CarriedPart .. ". Return to the bench and PLACE REPLACEMENT."
+		objective = "CARRYING: " .. state.CarriedPart .. ". Go back to the bench and press PUT PART ON BENCH."
 	elseif state.Order and state.Order.PartCarrier and not state.Order.PartDelivered then
 		objective = state.Order.PartCarrier .. " is bringing the replacement. Wait at the bench or help with the shop."
 	elseif state.Order and state.Order.PartDelivered and state.Order.Step == "Repair" then
@@ -384,15 +389,23 @@ function View:Render()
 	self.use.Visible, self.use.Active = action ~= nil, not self.busy and action ~= nil
 	self.use.Text = self.busy and "PLEASE WAIT"
 		or action == "ClockIn" and "CLOCK IN"
-		or action == "OpenClock" and "INSPECT TIMECLOCK"
+		or action == "OpenClock" and "OPEN TIMECLOCK"
 		or action == "PickupTool" and "TAKE REPAIR KIT"
 		or action == "ToggleDoor" and "OPEN STAFF DOOR"
-		or action == "Secure" and "REASSEMBLE / SECURE PHONE"
+		or action == "Secure" and "PUT PHONE BACK TOGETHER"
 		or action == "Sit" and "SIT AT REPAIR BENCH"
-		or action == "Stand" and "STAND UP / STOCKROOM"
-		or action == "DepositPart" and "PLACE REPLACEMENT"
+		or action == "Stand" and "STAND UP"
+		or action == "DepositPart" and "PUT PART ON BENCH"
 		or action == "Collect" and ("TAKE " .. string.upper(state.Order.Fault or "PART"))
 		or action == "Repair" and ("FIT " .. string.upper(state.Order.Fault or "PART"))
+		or action == "Diagnose" and "FIND THE BROKEN PART"
+		or action == "Install" and "ADD PHONE PROGRAM"
+		or action == "Test" and "CHECK THE PHONE"
+		or action == "TakeOrder" and "TAKE CUSTOMER'S PHONE"
+		or action == "Return" and "GIVE PHONE BACK"
+		or action == "Restock" and "UNPACK MORE PARTS"
+		or action == "ReadRules" and "READ TONIGHT'S RULES"
+		or action == "Records" and "SHOW REPAIR PAPERS"
 		or action and string.upper(action:gsub("(%l)(%u)", "%1 %2"))
 		or "WAIT"
 	local outsideWarning = state.Outside and state.Outside.ThreatEndsAt
@@ -420,13 +433,13 @@ function View:Render()
 			.. (o.Fee or 45)
 			.. "\n"
 			.. o.Complaint
-			.. (o.Requirement and "\nSERVICE: " .. o.Requirement or "")
+			.. (o.Requirement and "\nJOB: " .. o.Requirement or "")
 			.. "\n\n"
-			.. o.Step
+			.. (STEP_NAMES[o.Step] or o.Step)
 			.. (o.Fault and "\nPART: " .. o.Fault or "")
 			.. (
-				o.Paused and "\nSERVICE PAUSED / PATIENCE HELD"
-				or o.ExpiresAt and "\nPatience: " .. math.max(0, math.ceil(o.ExpiresAt - now)) .. "s"
+				o.Paused and "\nCustomer is waiting while we deal with the problem."
+				or o.ExpiresAt and "\nCustomer leaves in: " .. math.max(0, math.ceil(o.ExpiresAt - now)) .. "s"
 				or "\nTraining: take your time"
 			)
 	else
@@ -505,7 +518,7 @@ function View:Render()
 	self.objective.Size = action and UDim2.new(0.67, -18, 1, -18) or UDim2.new(1, -24, 1, -18)
 	self.ack.Visible = intro or rules == true
 	self.ack.Active = not self.busy
-	self.ack.Text = intro and "START SHIFT" or state.NeedsRules and "I UNDERSTAND / BEGIN" or "BACK TO WORK"
+	self.ack.Text = intro and "START SHIFT" or state.NeedsRules and "READY" or "BACK TO WORK"
 	for choice, button in pairs(self.voteButtons) do
 		button.Visible, button.Active = vote ~= nil and vote ~= false, not self.busy
 		button.Text = string.upper(choice) .. (vote and (" (" .. state.Vote[choice] .. ")") or "")
@@ -521,7 +534,7 @@ function View:Render()
 	self.lobby.Text = self.busy and "PLEASE WAIT..." or self.confirmReturn and "CONFIRM RETURN" or "RETURN TO LOBBY"
 	if self.confirmAnswer then
 		self.modalTitle.Text = "PICK UP?"
-		self.modalText.Text = "The rules say to let it ring. Answering will hurt you and change the Story ending."
+		self.modalText.Text = "The rules say not to answer. Answering will hurt you and change the Story ending."
 		self.ack.Visible, self.replay.Visible, self.lobby.Visible = false, false, false
 		self.voteButtons.Report.Visible, self.voteButtons.Hide.Visible, self.voteButtons.Investigate.Visible =
 			true, true, false
@@ -562,20 +575,20 @@ function View:Render()
 	elseif intro then
 		self.modalTitle.Text, self.modalText.Text = state.Intro.Title, state.Intro.Text
 	elseif vote then
-		self.modalTitle.Text = "CLASSIFIED FILE / TEAM DECISION"
+		self.modalTitle.Text = "STRANGE MESSAGE - VOTE TOGETHER"
 		self.modalText.Text = state.Vote.Message
-			.. "\n\nREPORT: lower suspicion; expose the customer.\nHIDE: protect the message; raise suspicion.\nINVESTIGATE: recover a clue; raise suspicion further.\n\n"
+			.. "\n\nREPORT: tell the government. They trust you more, but the customer may be in danger.\nHIDE: keep it secret. The government trusts you less.\nINVESTIGATE: look for more clues. The government trusts you even less.\n\n"
 			.. math.max(0, math.ceil(state.Vote.EndsAt - now))
-			.. "s left. Majority wins. With no votes, report automatically. Ties prefer Report, then Hide."
+			.. "s left. Most votes wins. No votes means REPORT. A tie picks REPORT first, then HIDE."
 	elseif rules then
-		self.modalTitle.Text = state.NeedsRules and "DEVICE REPAIR ASSOCIATE" or "SHIFT INFO"
-		self.modalText.Text = (state.Rules or "Loading directive...")
+		self.modalTitle.Text = state.NeedsRules and "YOUR NIGHT JOB" or "SHIFT INFO"
+		self.modalText.Text = (state.Rules or "Loading tonight's rules...")
 			.. "\n\nYOUR FIRST JOB\nTake the repair kit. Accept a phone. Follow the highlighted part.\n\nClick or tap small objects. At the bench, drag parts or choose USE BUTTONS. Q / B stands up. A friend can bring parts.\n\nThe first repair is practice. Notes are optional. Keep the shop running until 6 AM."
 		if not state.NeedsRules then
 			self.modalText.Text = self.orderDetails
 				.. "\n\n"
 				.. self.rosterDetails
-				.. "\n\nDIRECTIVE\n"
+				.. "\n\nTONIGHT'S RULES\n"
 				.. self.modalText.Text
 		end
 	end

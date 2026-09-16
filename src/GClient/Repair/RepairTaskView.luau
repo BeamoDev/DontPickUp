@@ -405,9 +405,9 @@ function View:Render()
 	self.check.Visible = p.Kind == "Circuit" or p.Kind == "Dials" or p.Kind == "Memory"
 	self.check.Active = not self.busy and not watching
 	self.check.Text = p.Kind == "Memory"
-			and (now < p.RevealAt and "GET READY" or watching and ("WATCH " .. math.min(step, p.Count) .. "/" .. p.Count) or "REPLAY SIGNAL")
-		or p.Kind == "Dials" and "LOCK DATA LINK"
-		or "TEST CIRCUIT / IN TO OUT"
+			and (now < p.RevealAt and "GET READY" or watching and ("WATCH " .. math.min(step, p.Count) .. "/" .. p.Count) or "WATCH AGAIN")
+		or p.Kind == "Dials" and "CHECK NUMBERS"
+		or "CHECK PATH"
 	for _, line in ipairs(self.lines) do
 		line.Visible = false
 	end
@@ -431,8 +431,8 @@ function View:Render()
 			local item = i <= 3 and i or p.Slots[i - 3]
 			button.Position = UDim2.new(i <= 3 and 0 or 0.7, 0, ((i - 1) % 3) / 3, 2)
 			button.Size = UDim2.new(0.3, 0, 1 / 3, -6)
-			button.Text = p.Kind == "Wires" and ((i <= 3 and "WIRE " or "PORT ") .. item)
-				or ((i <= 3 and "CELL " or "BAY ") .. MARKS[item])
+			button.Text = p.Kind == "Wires" and ((i <= 3 and "WIRE " or "SPACE ") .. item)
+				or ((i <= 3 and "BATTERY " or "SPACE ") .. MARKS[item])
 			button.TextColor3 = COLORS[item]
 			if p.Placed[item] then
 				button.Text = p.Kind == "Wires" and "CONNECTED " .. item or "FITTED " .. MARKS[item]
@@ -447,12 +447,13 @@ function View:Render()
 			end
 		elseif p.Kind == "Probes" then
 			local index = (i - 1) % 3 + 1
-			button.Text = i <= 3 and (NAMES[i] .. "\n" .. p.Readings[i]) or ("REPLACE\n" .. NAMES[index])
+			button.Text = i <= 3 and ((p.Tested[i] and "" or "CHECK ") .. NAMES[i] .. "\n" .. p.Readings[i])
+				or ("REPLACE\n" .. NAMES[index])
 			if i > 3 then
 				button.Visible = p.Progress == 3
 			end
 		elseif p.Kind == "Circuit" then
-			button.Text = i == 1 and "IN" or i == 4 and "OUT" or ""
+			button.Text = i == 1 and "START" or i == 4 and "END" or ""
 			button.TextYAlignment, button.TextXAlignment, button.TextSize =
 				Enum.TextYAlignment.Top, Enum.TextXAlignment.Left, 11
 			local rotation = p.Rotations[i]
@@ -464,7 +465,7 @@ function View:Render()
 				button.Size = UDim2.new(1 / 3, -8, 1, -52)
 				button.TextYAlignment = Enum.TextYAlignment.Bottom
 				button.Text = "TURN / " .. p.Values[i]
-				self.dialLabels[i].Text = "TARGET " .. p.Targets[i]
+				self.dialLabels[i].Text = "MATCH " .. p.Targets[i]
 				self.needles[i].Rotation = (p.Values[i] - 3) * 60
 			end
 		else

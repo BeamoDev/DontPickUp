@@ -34,15 +34,15 @@ local BULLETINS = {
 }
 local OBJECTIVES = {
 	Arriving = "A customer is approaching the service window.",
-	Waiting = "Go to INTAKE and accept the customer's phone.",
-	Diagnose = "Sit at the REPAIR BENCH and diagnose the phone.",
-	Collect = "Stand up and collect the marked part from the back STOCKROOM.",
-	Repair = "Carry the replacement to the bench, place it down, then sit to fit it.",
-	Secure = "Reassemble the phone and tighten all four screws at the bench.",
-	Install = "Install the government software at REPAIR BENCH.",
+	Waiting = "Go to the counter and take the customer's phone.",
+	Diagnose = "Sit at the repair bench. Find the broken part.",
+	Collect = "Stand up. Get the marked part from the back room.",
+	Repair = "Put the new part on the bench. Sit down to put it in the phone.",
+	Secure = "Put the phone back together. Tighten all four screws.",
+	Install = "Stay at the bench. Add the required program to the phone.",
 	Evidence = "Read the recovered message. Your team must choose what to do.",
-	Test = "Run the final checks at the REPAIR BENCH.",
-	Return = "Go to INTAKE and return the phone to its customer.",
+	Test = "Check that the phone works before giving it back.",
+	Return = "Go to the counter and give the fixed phone back.",
 }
 
 return {

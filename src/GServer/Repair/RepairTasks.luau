@@ -18,21 +18,21 @@ end
 function Tasks.New(action, fault, seed, length, now)
 	local puzzle
 	if action == "Diagnose" then
-		puzzle = base("Probes", "PROBE THE PHONE", "Test all three points, then choose the faulty part.")
+		puzzle = base("Probes", "FIND THE BROKEN PART", "Check each part, then choose the one marked BROKEN.")
 		puzzle.Answer = table.find({ "Battery", "Speaker", "Keypad" }, fault)
 		puzzle.Tested = { false, false, false }
 		puzzle.Readings = {
-			fault == "Battery" and "0.2 V / LOW" or "3.7 V / OK",
-			fault == "Speaker" and "OPEN CIRCUIT" or "8 OHMS / OK",
-			fault == "Keypad" and "NO RESPONSE" or "RESPONSE OK",
+			fault == "Battery" and "BROKEN" or "WORKING",
+			fault == "Speaker" and "BROKEN" or "WORKING",
+			fault == "Keypad" and "BROKEN" or "WORKING",
 		}
 	elseif action == "Repair" and (fault == "Battery" or fault == "Speaker") then
 		local wire = fault == "Speaker"
 		puzzle = base(
 			wire and "Wires" or "BatteryFit",
-			wire and "RECONNECT THE WIRES" or "FIT THE POWER CELLS",
-			wire and "Drag each numbered wire to its matching socket. Or tap wire, then socket."
-				or "Drag each marked cell into its matching bay. Or tap cell, then bay."
+			wire and "RECONNECT THE WIRES" or "PUT IN THE BATTERIES",
+			wire and "Match each wire to the same number. Drag it, or tap both ends."
+				or "Match each battery to the same label. Drag it, or tap both spaces."
 		)
 		puzzle.Slots, puzzle.Placed = { 1, 2, 3 }, { false, false, false }
 		local rolls = numbers(seed + 17, 2, 6)
@@ -43,8 +43,8 @@ function Tasks.New(action, fault, seed, length, now)
 	elseif action == "Repair" then
 		puzzle = base(
 			"Circuit",
-			"RESTORE THE KEYPAD CIRCUIT",
-			"Rotate the six pieces. Connect IN across the top row, down, and back to OUT. Then test."
+			"JOIN THE BROKEN PATH",
+			"Turn the pieces to join START to END. Follow the top row, then come back below."
 		)
 		puzzle.Rotations = numbers(seed + 31, 6, 4)
 		puzzle.Targets, puzzle.Shapes =
@@ -53,11 +53,7 @@ function Tasks.New(action, fault, seed, length, now)
 			puzzle.Rotations[i] = (target + 1 + puzzle.Rotations[i] % 2 * 2) % 4
 		end
 	elseif action == "Install" and seed % 2 == 0 then
-		puzzle = base(
-			"Dials",
-			"TUNE THE DATA LINK",
-			"Turn each dial to its printed channel. Lock the link when all three match."
-		)
+		puzzle = base("Dials", "MATCH THE NUMBERS", "Turn each dial to the number above it. Then press CHECK NUMBERS.")
 		puzzle.Targets, puzzle.Values = numbers(seed + 73, 3, 5), {}
 		for i, target in ipairs(puzzle.Targets) do
 			puzzle.Values[i] = target % 5 + 1
@@ -65,8 +61,8 @@ function Tasks.New(action, fault, seed, length, now)
 	elseif action == "Test" then
 		puzzle = base(
 			"Memory",
-			"REPEAT THE TEST SIGNAL",
-			"Watch the numbered pads, then repeat the order. REPLAY lets you watch again."
+			"COPY THE FLASHING NUMBERS",
+			"Watch the numbers light up. Press them in the same order. WATCH AGAIN can help."
 		)
 		puzzle.Sequence = numbers(seed + 127, math.clamp((length or 4) - 1, 3, 5), 6)
 		puzzle.Count = #puzzle.Sequence
@@ -156,9 +152,14 @@ function Tasks.Input(puzzle, move, revision, now)
 	end
 	puzzle.Revision += 1
 	puzzle.Solved = solved
-	puzzle.Feedback = wrong and "Not connected. Check the markings and try again."
-		or solved and "CHECK PASSED"
-		or "Input accepted."
+	puzzle.Feedback = wrong and "Not quite. Check the labels and try again."
+		or solved and "DONE!"
+		or "Good! Keep going."
+	if wrong and puzzle.Kind == "Probes" then
+		puzzle.Feedback = "That part works. Choose the one marked BROKEN."
+	elseif wrong and puzzle.Kind == "Memory" then
+		puzzle.Feedback = "Try from the first number. Press WATCH AGAIN if you need help."
+	end
 	return true, solved
 end
 return Tasks

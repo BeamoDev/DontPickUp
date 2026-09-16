@@ -120,7 +120,7 @@ function View:Render(view, p, watching, lit, reduced)
 				and (p.Value >= 0.35 and p.Good + elapsed or (value - 0.35) / p.Drift)
 			or 0
 		self.needle.Position = UDim2.fromScale(value, 0.1)
-		meterLabel = "CONFIRM / " .. string.format("%.1f", math.min(held, 2.5)) .. " / 2.5s"
+		meterLabel = "CHECK / " .. string.format("%.1f", math.min(held, 2.5)) .. " / 2.5s"
 		view.check.Text = meterLabel
 	end
 	local key = view.work.Id
@@ -173,28 +173,29 @@ function View:Render(view, p, watching, lit, reduced)
 	end
 	view.check.Visible = p.Kind == "SIM" or p.Kind == "Speaker" or graph
 	view.check.Active = not view.busy and not watching
-	view.check.Text = p.Kind == "SIM" and "ROTATE SIM 90 DEGREES"
-		or p.Kind == "Speaker" and (watching and "LISTEN / WATCH" or "REPLAY TONES")
+	view.check.Text = p.Kind == "SIM" and "TURN CARD"
+		or p.Kind == "Speaker" and (watching and "WATCH THE NUMBERS" or "WATCH AGAIN")
 		or p.Kind == "Meter" and meterLabel
-		or "LOCK MATCHED WAVES"
+		or "CHECK LINES"
 	for _, line in ipairs(view.lines) do
 		line.Visible = false
 	end
 	local sources, targets
 	if View.Pair(p) then
 		if p.Kind == "Debris" then
-			sources, targets = { "COIN", "LINT", "PAPER CLIP" }, { "WASTE TRAY" }
+			sources, targets = { "COIN", "FLUFF", "PAPER CLIP" }, { "WASTE TRAY" }
 		elseif p.Kind == "Screen" then
 			sources, targets =
 				{ p.Phase == 1 and "CRACKED SCREEN" or "NEW SCREEN" }, { p.Phase == 1 and "RECYCLE" or "PHONE FRAME" }
 		elseif p.Kind == "SIM" then
-			sources, targets = { "SIM\nNOTCH " .. NOTCHES[p.Rotation + 1] }, { "SLOT\nNOTCH " .. NOTCHES[p.Notch + 1] }
+			sources, targets =
+				{ "CARD\nCUT-OUT " .. NOTCHES[p.Rotation + 1] }, { "SLOT\nCUT-OUT " .. NOTCHES[p.Notch + 1] }
 		elseif p.Kind == "Fuse" then
 			sources, targets =
-				p.Phase == 1 and { "BLOWN FUSE" } or { "1 AMP", "2 AMP", "3 AMP" },
-				{ p.Phase == 1 and "RECYCLE" or (p.Rating .. " AMP SOCKET") }
+				p.Phase == 1 and { "BROKEN FUSE" } or { "FUSE 1", "FUSE 2", "FUSE 3" },
+				{ p.Phase == 1 and "RECYCLE" or ("SPACE " .. p.Rating) }
 		elseif p.Kind == "Charger" then
-			sources, targets = SHAPES, { SHAPES[p.Port] .. " PORT" }
+			sources, targets = SHAPES, { SHAPES[p.Port] .. " HOLE" }
 		else
 			sources = p.Kind == "Sort" and { "BATTERY", "SPEAKER", "KEYPAD" } or { "1 BOARD", "2 BATTERY", "3 COVER" }
 			targets = { sources[p.Slots[1]], sources[p.Slots[2]], sources[p.Slots[3]] }
@@ -235,11 +236,11 @@ function View:Render(view, p, watching, lit, reduced)
 				label = "[ " .. label .. " ]"
 			end
 		elseif p.Kind == "Clean" and i <= 6 then
-			label = p.Dirt[i] == 0 and "CLEAN" or ("SCRUB " .. i .. "\n" .. p.Dirt[i] .. " passes")
+			label = p.Dirt[i] == 0 and "CLEAN" or ("SCRUB " .. i .. "\n" .. p.Dirt[i] .. " more")
 			button.BackgroundColor3 = p.Dirt[i] == 0 and Color3.new(0, 0, 0) or Color3.fromRGB(65, 48, 30)
 			button.Active = button.Active and p.Dirt[i] > 0
 		elseif p.Kind == "Broken" and i <= 6 then
-			label = "REMOVE " .. i .. "\n" .. (i == p.Bad and "OPEN / BURNT" or "8 OHMS / OK")
+			label = "PART " .. i .. "\n" .. (i == p.Bad and "BROKEN - REMOVE" or "WORKING - KEEP")
 		elseif (p.Kind == "Screws" or p.Kind == "Screen") and i <= 4 then
 			local done = p.Kind == "Screws" and p.Turns[i] == 3 or p.Kind == "Screen" and p.Clips[i]
 			label = p.Kind == "Screws" and ("SCREW " .. i .. " / " .. p.Turns[i] .. "/3") or ("CLIP " .. i)
@@ -250,32 +251,32 @@ function View:Render(view, p, watching, lit, reduced)
 			button.Size = UDim2.new(0.4, -8, 0.46, -4)
 			button.TextColor3, button.Active = done and ACCENT or WHITE, button.Active and not done
 		elseif p.Kind == "PhoneNumber" and i <= 11 then
-			label = i == 11 and "CLEAR" or tostring(i % 10)
+			label = i == 11 and "START OVER" or tostring(i % 10)
 			button.Position = UDim2.new((i - 1) % 3 / 3, 3, math.floor((i - 1) / 3) / 4, 1)
 			button.Size = UDim2.new(1 / 3, -6, 0.25, -3)
 		elseif p.Kind == "Buttons" and i <= 6 then
 			label = tostring(i)
 		elseif p.Kind == "Speaker" and i <= 3 then
-			label = ({ "1 LOW", "2 MID", "3 HIGH" })[i]
+			label = ({ "1", "2", "3" })[i]
 			if watching and lit == i then
 				label = "[ " .. label .. " ]"
 				button.TextColor3 = ACCENT
 			end
 		elseif p.Kind == "Waves" and i <= 4 then
-			label = ({ "FREQ -", "FREQ +", "PHASE -", "PHASE +" })[i]
+			label = ({ "LESS BUMPS", "MORE BUMPS", "SLIDE RIGHT", "SLIDE LEFT" })[i]
 			button.Position = UDim2.new((i - 1) / 4, 2, 0.49, 0)
 			button.Size = UDim2.new(0.25, -4, 0.22, 0)
 		elseif p.Kind == "Meter" and i <= 2 then
-			label = i == 1 and "POWER -" or "POWER +"
+			label = i == 1 and "LEFT" or "RIGHT"
 			button.Position = UDim2.new((i - 1) / 2, 2, 0.49, 0)
 			button.Size = UDim2.new(0.5, -4, 0.22, 0)
 		elseif p.Kind == "Stamp" then
 			if p.Retest and i == 3 then
-				label = "RESEAT TEST LEAD\nAND RETEST"
+				label = "FIX LOOSE WIRE"
 			elseif not p.Retest and i <= 2 then
-				label = i == 1 and "STAMP PASS" or "STAMP FAIL"
+				label = i == 1 and "PHONE IS READY" or "FIX IT FIRST"
 			elseif i == 4 then
-				label = "POWER: OK\nAUDIO: OK\nCONTACT: " .. (p.Failed and "FAIL" or "OK")
+				label = "Battery: working\nSound: working\nWire: " .. (p.Failed and "loose - fix it" or "working")
 				button.Active = false
 			end
 		end

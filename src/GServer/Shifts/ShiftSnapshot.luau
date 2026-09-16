@@ -157,7 +157,7 @@ function Methods:Snapshot(player)
 		end
 	end
 	if not order and self.phase == "Tutorial" then
-		snapshot.Objective = "Read the directive. Wait for every staff member to acknowledge it."
+		snapshot.Objective = "Read tonight's rules. Wait for everyone to press READY."
 	end
 	if lane.work then
 		snapshot.Work = {

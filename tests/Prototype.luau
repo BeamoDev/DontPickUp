@@ -919,10 +919,7 @@ do
 	state.Intro = nil
 	state.Target = "Timeclock"
 	view:SetState(state)
-	check(
-		view:CurrentAction() == "OpenClock" and view.use.Text == "INSPECT TIMECLOCK",
-		"entry action changes to clock-in"
-	)
+	check(view:CurrentAction() == "OpenClock" and view.use.Text == "OPEN TIMECLOCK", "entry action changes to clock-in")
 	state.Focus = { Id = "clock", Station = "Timeclock" }
 	view:SetState(state)
 	check(not view.top.Visible and not view.bottom.Visible, "timeclock inspection hides the ordinary HUD")
@@ -981,7 +978,7 @@ do
 	state.Seated, state.CarriedPart, state.Order.Step = false, "Battery", "Repair"
 	view:SetState(state)
 	check(
-		view:CurrentAction() == "DepositPart" and view.use.Text == "PLACE REPLACEMENT",
+		view:CurrentAction() == "DepositPart" and view.use.Text == "PUT PART ON BENCH",
 		"carried tool changes HUD to bench delivery"
 	)
 	state.CarriedPart = nil
@@ -1614,7 +1611,7 @@ do
 	h.time = working.Work.Puzzle.RevealUntil + 1
 	puzzleUi:Update(working, false, false)
 	check(
-		taskUi.buttons[1].Active and taskUi.check.Text == "REPLAY SIGNAL",
+		taskUi.buttons[1].Active and taskUi.check.Text == "WATCH AGAIN",
 		"memory controls unlock after server demonstration time"
 	)
 	working.Work.Id = "dial"
@@ -1625,7 +1622,7 @@ do
 	working.Work.Puzzle = puzzleRules.Snapshot(puzzleRules.New("Repair", "Keypad", 2, 4, h.time))
 	puzzleUi:Update(working, false, false)
 	check(
-		not taskUi.dials[1].Visible and taskUi.buttons[4].Visible and taskUi.buttons[1].Text == "IN",
+		not taskUi.dials[1].Visible and taskUi.buttons[4].Visible and taskUi.buttons[1].Text == "START",
 		"task changes reset pooled geometry and reveal circuit controls"
 	)
 	local benchRules = h:load("src/GServer/Repair/BenchTasks.luau")
@@ -1948,7 +1945,7 @@ do
 	gesture(physical.nodes.probe1, physical.nodes.probe1.Spec.Position)
 	acceptPhysical()
 	check(
-		physicalPuzzle.Tested[1] and physical.nodes.probe1.Label.Text == physicalPuzzle.Readings[1],
+		physicalPuzzle.Tested[1] and physical.nodes.probe1.Label.Text == "BATTERY\n" .. physicalPuzzle.Readings[1],
 		"physical probe displays only a reading the server has revealed"
 	)
 	physical.mode.Activated:Fire()
@@ -2279,7 +2276,7 @@ for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 	check(
 		f.run:Snapshot(p).Work.Interactive
 			and f.run:Snapshot(p).Work.Puzzle.Kind
-				== ({ Battery = "BatteryFit", Speaker = "Wires", Keypad = "Circuit" })[fault],
+				== ({ Battery = "BatteryFit", Speaker = "Wires", Keypad = "Buttons" })[fault],
 		"fault selects distinct interactive repair"
 	)
 	f:solve()
@@ -2920,7 +2917,7 @@ do
 				"diagnosis requires all probe readings before choosing a part"
 			)
 			check(
-				rules.Snapshot(probe).Answer == nil and rules.Snapshot(probe).Readings[1] == "NOT TESTED",
+				rules.Snapshot(probe).Answer == nil and rules.Snapshot(probe).Readings[1] == "PRESS TO CHECK",
 				"unmeasured readings and diagnosis answer stay private"
 			)
 			for i = 1, 3 do

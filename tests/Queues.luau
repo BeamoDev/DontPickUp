@@ -741,7 +741,12 @@ do
 	local board = child(queue, "BillboardGui", "BillboardGui")
 	local background = child(board, "Frame", "Background")
 	local stroke = child(background, "UIStroke", "UIStroke")
+	stroke.Color = Roblox.Color3.fromRGB(90, 100, 110)
 	local title = child(board, "TextLabel", "Title")
+	local titleStroke = child(child(title, "Frame", "Frame"), "UIStroke", "UIStroke")
+	titleStroke.Color = Roblox.Color3.fromRGB(120, 130, 140)
+	local boardStroke = child(board, "UIStroke", "UIStroke")
+	boardStroke.Color = Roblox.Color3.fromRGB(150, 160, 170)
 	title.Size, title.Position = "original-size", "original-position"
 	title.TextScaled, title.TextSize, title.TextWrapped = false, 24, true
 	child(board, "TextLabel", "PlayerCount")
@@ -764,10 +769,7 @@ do
 		title.Text == "SHIFT AVAILABLE" and status.Text == "READY" and mode.Text == "Story",
 		"empty sign matches owner design wording"
 	)
-	check(
-		stroke.Color == Roblox.Color3.fromRGB(4, 255, 0) and status.TextColor3 == stroke.Color,
-		"ready status and border use matching green"
-	)
+	check(status.TextColor3 == Roblox.Color3.fromRGB(4, 255, 0), "ready status text uses green")
 	state.Host, state.Mode, state.Count, state.Capacity = "Beamo", "Endless", 2, 3
 	queue:SetAttribute("EndlessIcon", "endless-image")
 	state.State, state.ExpiresAt = "Open", h.time + 19.2
@@ -787,8 +789,8 @@ do
 	state.ExpiresAt = h.time + 4.2
 	view:Render(queue, state, h.time)
 	check(
-		status.Text == "LEAVING 5s" and stroke.Color == Roblox.Color3.fromRGB(255, 195, 65),
-		"final countdown uses amber warning"
+		status.Text == "LEAVING 5s" and status.TextColor3 == Roblox.Color3.fromRGB(255, 195, 65),
+		"final countdown status text uses amber warning"
 	)
 	view:Render(queue, state, h.time + 10)
 	check(status.Text == "LEAVING 0s", "late tick never renders a negative countdown")
@@ -830,6 +832,12 @@ do
 	check(
 		title.Size == "original-size" and title.Position == "original-position",
 		"billboard updates preserve authored geometry"
+	)
+	check(
+		stroke.Color == Roblox.Color3.fromRGB(90, 100, 110)
+			and titleStroke.Color == Roblox.Color3.fromRGB(120, 130, 140)
+			and boardStroke.Color == Roblox.Color3.fromRGB(150, 160, 170),
+		"queue state changes preserve Background, Title.Frame and board UIStroke colors"
 	)
 end
 

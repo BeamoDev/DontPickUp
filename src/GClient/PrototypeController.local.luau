@@ -84,7 +84,22 @@ view = View.new(player:WaitForChild("PlayerGui"), {
 		send("ReturnLobby")
 	end,
 })
-local firstPerson = FirstPersonCamera.new(view.gui, player, game:GetService("UserInputService"))
+local guiService = game:GetService("GuiService")
+local firstPerson = FirstPersonCamera.new(view.gui, player, game:GetService("UserInputService"), {
+	render = game:GetService("RunService"),
+	menuOpen = function()
+		return guiService.MenuIsOpen
+	end,
+	needsPointer = function()
+		return view.modal.Visible
+			or state.Seated == true
+			or state.Focus ~= nil
+			or state.Inspection ~= nil
+			or (state.Work ~= nil and state.Work.Puzzle ~= nil)
+			or state.Phase == "Results"
+			or state.Alive ~= true
+	end,
+})
 inspection = InspectionView.new(view.gui, {
 	input = game:GetService("UserInputService"),
 	gui = game:GetService("GuiService"),
@@ -97,6 +112,9 @@ worldInteraction = WorldInteraction.new(view.gui, {
 	input = game:GetService("UserInputService"),
 	workspace = workspace,
 	player = player,
+	locked = function()
+		return firstPerson:IsLocked()
+	end,
 	send = function(action, payload)
 		if payload.Station == "Answer" then
 			view.confirmAnswer = state.Event and state.Event.Id
@@ -106,7 +124,6 @@ worldInteraction = WorldInteraction.new(view.gui, {
 		end
 	end,
 })
-local guiService = game:GetService("GuiService")
 local function reducedMotion()
 	local data = player:FindFirstChild("PlayerData")
 	local settings = data and data:FindFirstChild("Settings")

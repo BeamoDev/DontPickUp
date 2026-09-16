@@ -77,7 +77,7 @@ function World.new(services, config)
 		Timeclock = { Vector3.new(18, 3, 0), Vector3.new(1.5, 2, 0.6), "TIMECLOCK / CLOCK IN" },
 		Radio = { Vector3.new(17, 3.9, 18), Vector3.new(3, 2, 1.5), "RADIO / TUNE" },
 		DeskLamp = { Vector3.new(-8.5, 4, -2), Vector3.new(0.4, 1.5, 0.4), "BENCH LAMP" },
-		Counter = { Vector3.new(0, 1.7, -13), Vector3.new(15, 3.4, 4), "INTAKE / RETURNS" },
+		Counter = { Vector3.new(0, 1.7, -13), Vector3.new(15, 3.4, 4), "TAKE / RETURN PHONES" },
 		Bench = { Vector3.new(-12, 1.5, -1), Vector3.new(9, 3, 4), "BENCH 1" },
 		Bench2 = { Vector3.new(10, 1.5, -1), Vector3.new(9, 3, 4), "BENCH 2" },
 		Stock = { Vector3.new(-7, 1, 20), Vector3.new(3, 2, 3), "SUPPLY CRATE / RESTOCK" },
@@ -606,7 +606,7 @@ function World:Render(run)
 	end
 	self.actions = actions
 	local names = {
-		OpenClock = "Inspect timeclock",
+		OpenClock = "Open timeclock",
 		PickupTool = "Pick up",
 		Discover = "Inspect",
 		ToggleDoor = run.doorOpen and "Close staff door" or "Open staff door",
@@ -614,19 +614,19 @@ function World:Render(run)
 		TuneRadio = "Tune radio",
 		ToggleLamp = "Toggle work light",
 		InspectRecords = "Read shift log",
-		Secure = "Reassemble and tighten screws",
+		Secure = "Put phone back together",
 		Sit = "Sit at repair bench",
 		TakeOrder = "Accept phone",
 		Return = "Return repaired phone",
-		Diagnose = "Diagnose",
-		Collect = "Collect replacement",
-		Repair = "Fit replacement",
-		Install = "Install government package",
+		Diagnose = "Find the broken part",
+		Collect = "Take new part",
+		Repair = "Put in new part",
+		Install = "Add phone program",
 		Test = "Test phone",
-		Restock = "Restock parts",
+		Restock = "Unpack more parts",
 		RestorePower = "Restore power",
 		Silence = "Silence the phone",
-		Records = "Present repair records",
+		Records = "Show repair papers",
 	}
 	for name, prompt in pairs(self.prompts) do
 		local enabled = actions[name] ~= nil

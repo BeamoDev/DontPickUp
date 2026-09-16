@@ -48,11 +48,12 @@ function Tasks.Build(p)
 				{ Color = colors[p.Slots[i]], Ghost = true }
 			)
 		end
-		hint = kind == "Assembly" and "Drag BOARD, BATTERY, then COVER into their marked positions."
-			or kind == "Wires" and "Drag each numbered wire end to its matching socket."
-			or "Drag the power cells from the tray into their matching bays."
+		hint = kind == "Assembly"
+				and ("Next: move the " .. names[math.min(p.Progress + 1, 3)] .. " to its matching space.")
+			or kind == "Wires" and "Move each wire to the space with the same number."
+			or "Move each battery to the space with the same label."
 	elseif kind == "Debris" then
-		for i, name in ipairs({ "COIN", "LINT", "CLIP" }) do
+		for i, name in ipairs({ "COIN", "FLUFF", "CLIP" }) do
 			add(
 				"item" .. i,
 				"Drag",
@@ -64,7 +65,7 @@ function Tasks.Build(p)
 			)
 		end
 		add("waste", "Drop", 1, 1.9, 0, "WASTE", { Size = Vector3.new(1, 0.08, 1.8), Ghost = true })
-		hint = "Drag the loose objects out of the casing into the waste tray."
+		hint = "Move the loose objects to the waste tray."
 	elseif kind == "Screen" then
 		if p.Phase <= 2 then
 			add(
@@ -85,8 +86,8 @@ function Tasks.Build(p)
 				p.Phase == 1 and "WASTE" or "DISPLAY",
 				{ Size = Vector3.new(1.3, 0.07, 0.9), Ghost = true }
 			)
-			hint = p.Phase == 1 and "Lift the cracked display into the waste tray."
-				or "Drag the new display into the phone."
+			hint = p.Phase == 1 and "Move the cracked screen to the waste tray."
+				or "Move the new screen into the phone."
 		else
 			for i = 1, 4 do
 				add(
@@ -99,7 +100,7 @@ function Tasks.Build(p)
 					{ Disabled = p.Clips[i], Size = Vector3.new(0.4, 0.12, 0.38) }
 				)
 			end
-			hint = "Press the four clips around the display to secure it."
+			hint = "Press each clip to hold the screen in place."
 		end
 	elseif kind == "Screws" then
 		for i = 1, 4 do
@@ -129,10 +130,19 @@ function Tasks.Build(p)
 		hint = "Hold a dirty patch and rub back and forth. Clean each patch twice."
 	elseif kind == "Probes" then
 		for i, name in ipairs({ "BATTERY", "SPEAKER", "KEYPAD" }) do
-			add("probe" .. i, "Click", i, 0, (i - 2) * 0.95, p.Tested[i] and p.Readings[i] or ("TEST " .. i))
-			add("diagnosis" .. i, "Click", i + 3, 1.85, (i - 2) * 0.95, name, { Disabled = p.Progress < 3 })
+			add("probe" .. i, "Click", i, 0, (i - 2) * 0.95, name .. "\n" .. (p.Tested[i] and p.Readings[i] or "CHECK"))
+			add(
+				"diagnosis" .. i,
+				"Click",
+				i + 3,
+				1.85,
+				(i - 2) * 0.95,
+				"REPLACE\n" .. name,
+				{ Disabled = p.Progress < 3 }
+			)
 		end
-		hint = "Touch all three test pads, then select the faulty component on the right."
+		hint = p.Progress < 3 and "Check the battery, speaker and keypad."
+			or "Choose REPLACE for the part marked BROKEN."
 	end
 	return nodes, hint
 end

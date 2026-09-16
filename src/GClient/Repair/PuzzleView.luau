@@ -141,13 +141,22 @@ function View:Update(state, busy, blocked)
 				puzzle.Labels and puzzle.Labels[n] or tostring(puzzle.Kind == "PhoneNumber" and n % 10 or n)
 			)
 		end
-		hint ..= "\nLABEL: " .. table.concat(printed, " - ") .. "\n" .. puzzle.Progress .. "/" .. #printed
+		local nextItem = printed[puzzle.Progress + 1]
+		hint = "COPY: "
+			.. table.concat(printed, " - ")
+			.. "\n"
+			.. (nextItem and ("NEXT: " .. nextItem) or "DONE!")
+			.. "  ("
+			.. puzzle.Progress
+			.. "/"
+			.. #printed
+			.. " done)"
 	end
 	self.hint.Text = hint .. "\n" .. (puzzle.Feedback or "")
 	if advanced then
 		self.hint.Text = hint
 			.. "\n"
-			.. (puzzle.Kind == "Memory" and (puzzle.Progress .. "/" .. puzzle.Count .. " inputs. ") or "")
+			.. (puzzle.Kind == "Memory" and (puzzle.Progress .. "/" .. puzzle.Count .. " correct. ") or "")
 			.. (puzzle.Feedback or "")
 		for _, button in ipairs(self.buttons) do
 			button.Visible = false

@@ -2,32 +2,32 @@
 local Tasks = {}
 local definitions = {
 	Clean = { "CLEAN THE PHONE", "Scrub each dirty patch twice. Clear all six patches." },
-	Debris = { "CLEAR THE CASING", "Drag the coin, lint and paper clip into the waste tray." },
-	Broken = { "REMOVE THE BAD COMPONENT", "Inspect the readings. Remove only the component marked OPEN." },
+	Debris = { "REMOVE THE TRASH", "Move the coin, fluff and paper clip to the waste tray." },
+	Broken = { "REMOVE THE BROKEN PART", "Choose the part marked BROKEN. Leave the working parts alone." },
 	Screen = {
 		"REPLACE THE CRACKED SCREEN",
 		"Remove the cracked screen, fit the new one, then press all four clips.",
 	},
-	SIM = { "INSERT THE SIM", "Rotate the card to match the notch, then slide it into the slot." },
-	Fuse = { "REPLACE THE FUSE", "Remove the blown fuse. Fit the replacement with the printed amp rating." },
-	Charger = { "CONNECT THE TEST CHARGER", "Match the plug shape to the phone port. Drag it across." },
-	Sort = { "SORT THE PARTS", "Drag each part to its labelled tray." },
+	SIM = { "PUT IN THE CARD", "Turn the card so its cut-out edge matches the slot. Then move it into the slot." },
+	Fuse = { "REPLACE THE FUSE", "Remove the broken fuse. Match the number on the new fuse to the space." },
+	Charger = { "CONNECT THE TEST CHARGER", "Move the plug to the hole with the same shape." },
+	Sort = { "SORT THE PARTS", "Move each part to the tray with the same name." },
 	Assembly = {
-		"REASSEMBLE THE PHONE",
-		"Fit the BOARD, then BATTERY, then COVER. Follow the printed order.",
+		"PUT THE PHONE BACK TOGETHER",
+		"Put in the BOARD first, then the BATTERY, then the COVER.",
 	},
-	Screws = { "TIGHTEN FOUR SCREWS", "Turn each screw three notches. All four must be tight." },
-	Buttons = { "CHECK THE BUTTONS", "Press the printed button sequence in order." },
-	PhoneNumber = { "DIAL THE TEST NUMBER", "Enter the printed phone number. CLEAR resets the number." },
+	Screws = { "TIGHTEN FOUR SCREWS", "Turn each screw three times. Do all four screws." },
+	Buttons = { "CHECK THE BUTTONS", "Press these numbers from left to right." },
+	PhoneNumber = { "TYPE THE PHONE NUMBER", "Press these numbers from left to right. START OVER clears your answer." },
 	Waves = {
-		"ALIGN THE SIGNAL WAVES",
-		"Match the amber wave to the white reference: adjust frequency and phase.",
+		"MATCH THE TWO LINES",
+		"Make the colored line match the white line. Use BUMPS and SLIDE, then CHECK.",
 	},
-	Meter = { "STABILIZE THE POWER", "Use - / + to keep the meter green for 2.5 seconds, then confirm." },
-	Stamp = { "STAMP THE REPAIR FORM", "Stamp PASS only when every test is OK. FAIL opens a retest." },
+	Meter = { "KEEP THE BAR IN THE MIDDLE", "Use LEFT and RIGHT to keep the bar in the green area. Then press CHECK." },
+	Stamp = { "IS THE PHONE READY?", "Check the results. Fix anything broken before marking the phone ready." },
 	Speaker = {
 		"TEST THE SPEAKER",
-		"Listen and watch, then repeat the low, middle and high tones. Replay if needed.",
+		"Watch the numbers light up. Press them in the same order. Sound is just a hint.",
 	},
 }
 function Tasks.Is(p)
@@ -224,14 +224,23 @@ function Tasks.Input(p, move, revision, now)
 			if p.Failed and move == 2 then
 				p.Retest = true
 			else
-				solved, wrong = not p.Failed and move == 1, true
+				solved = not p.Failed and move == 1
+				wrong = not solved
 			end
 		else
 			return false, false, "InvalidInput"
 		end
 	end
 	p.Solved, p.Revision = solved, p.Revision + 1
-	p.Feedback = solved and "CHECK PASSED" or wrong and "Check the markings and try again." or "Keep going."
+	p.Feedback = solved and "DONE!" or wrong and "Not quite. Match the labels and try again." or "Keep going."
+	if wrong and p.Sequence then
+		p.Feedback = p.Kind == "Speaker" and "Try from the first number. WATCH AGAIN can help."
+			or "Try again from the first number shown."
+	elseif wrong and p.Kind == "Broken" then
+		p.Feedback = "That part works. Choose the one marked BROKEN."
+	elseif wrong and p.Kind == "Stamp" then
+		p.Feedback = p.Failed and "Fix the loose wire first." or "Everything works. Press PHONE IS READY."
+	end
 	return true, solved
 end
 return Tasks

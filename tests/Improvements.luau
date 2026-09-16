@@ -9,6 +9,63 @@ local function fixture(count)
 	return createFixture(count, check)
 end
 
+-- Early phones teach visible matching/copying; later shifts retain easy jobs.
+do
+	local h = Harness.Environment()
+	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local laterEasy = 0
+	for seed = 1, 30 do
+		check(puzzles.IsEasy(false, 1, seed), "all first-night phones use easy tasks")
+		check(puzzles.IsEasy(true, 3, seed), "training stays easy regardless of night")
+		laterEasy += puzzles.IsEasy(false, 3, seed) and 1 or 0
+		for _, action in ipairs({ "Repair", "Install", "Test" }) do
+			local p = puzzles.New(action, "Keypad", seed, 6, 100, true, true)
+			check(p.Sequence and #p.Sequence == 3 and p.TaskCount == 1, "easy job has one short visible sequence")
+			check(
+				p.Kind ~= "Memory" and p.Kind ~= "Speaker" and p.Kind ~= "Circuit",
+				"easy job requires no hidden sequence or circuit knowledge"
+			)
+			local ok, solved = puzzles.Input(p, p.Sequence[1] % 6 + 1, p.Revision, 100)
+			check(ok and not solved and p.Progress == 0, "wrong number cannot finish an easy task")
+			for i = 1, 3 do
+				local revision = p.Revision
+				ok, solved = puzzles.Input(p, p.Sequence[i], revision, 100)
+				check(ok and solved == (i == 3), "only the full correct sequence completes the task")
+				check(not puzzles.Input(p, p.Sequence[i], revision, 100), "easy task still rejects stale input")
+			end
+		end
+	end
+	check(laterEasy == 20, "two out of three later seeds keep familiar easy tasks")
+	for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
+		local p = puzzles.New("Diagnose", fault, 1, 3, 100, false, true)
+		check(puzzles.Snapshot(p).Readings[1] == "PRESS TO CHECK", "unchecked parts do not reveal the fault")
+		for i = 1, 3 do
+			puzzles.Input(p, i, p.Revision, 100)
+		end
+		local snapshot = puzzles.Snapshot(p)
+		check(
+			snapshot.Answer == nil and snapshot.Hint:find("REPLACE"),
+			"diagnosis explains what to do without exposing answer IDs"
+		)
+		for i, name in ipairs({ "Battery", "Speaker", "Keypad" }) do
+			check(
+				snapshot.Readings[i] == (name == fault and "BROKEN" or "WORKING"),
+				"every diagnosis result uses plain words"
+			)
+		end
+	end
+	-- Stamp itself is also used after the harder tests.
+	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
+	local stamp = bench.New("Stamp", 2, 100)
+	check(puzzles.Snapshot(stamp).Hint:find("FIX IT FIRST"), "loose wire explains the required action")
+	check(not select(2, puzzles.Input(stamp, 1, stamp.Revision, 100)), "cannot mark broken phone ready")
+	puzzles.Input(stamp, 2, stamp.Revision, 100)
+	check(puzzles.Snapshot(stamp).Hint:find("FIX LOOSE WIRE"), "retest explains the next button")
+	puzzles.Input(stamp, 3, stamp.Revision, 100)
+	check(puzzles.Snapshot(stamp).Hint:find("PHONE IS READY"), "repaired wire changes the instruction")
+	check(select(2, puzzles.Input(stamp, 1, stamp.Revision, 100)), "repaired phone can be marked ready")
+end
+
 -- Two staff complete independent phones, then survive and settle the shared night.
 do
 	local f = fixture(2)
@@ -474,6 +531,120 @@ do
 	check(not reader.panel.Visible, "hazard releases reader")
 	reader:Destroy()
 	check(not reader.panel.Parent and selection.SelectedObject == nil, "reader cleanup restores GUI selection")
+
+	-- Cursor policy must release real UI interactions without fighting station cameras.
+	h.env.UDim = Roblox.UDim
+	local needsPointer, menuOpen, textFocus = false, false, nil
+	input.WindowFocused = signal()
+	input.PreferredInput = Roblox.Enum.PreferredInput.KeyboardAndMouse
+	input.MouseBehavior = Roblox.Enum.MouseBehavior.Default
+	input.MouseIconEnabled = true
+	function input:GetFocusedTextBox()
+		return textFocus
+	end
+	player.CameraMode = Roblox.Enum.CameraMode.Classic
+	player.CharacterAdded = signal()
+	gui.Parent = h.instance("PlayerGui")
+	local render = { callback = nil }
+	function render:BindToRenderStep(name, priority, callback)
+		self.name, self.priority, self.callback = name, priority, callback
+	end
+	function render:UnbindFromRenderStep(name)
+		check(name == self.name, "cursor removes its own frame binding")
+		self.callback = nil
+	end
+	local cursor = h:load("src/GClient/Interactions/FirstPersonCamera.luau").new(gui, player, input, {
+		render = render,
+		needsPointer = function()
+			return needsPointer
+		end,
+		menuOpen = function()
+			return menuOpen
+		end,
+	})
+	check(
+		cursor:IsLocked() and not input.MouseIconEnabled and cursor.dot.Visible,
+		"normal play locks to center with only the dot visible"
+	)
+	check(
+		cursor.overlay.IgnoreGuiInset and cursor.dot.Position == h.env.UDim2.fromScale(0.5, 0.5),
+		"dot uses the full viewport center"
+	)
+	check(render.priority > Roblox.Enum.RenderPriority.Camera.Value, "cursor policy runs after native camera")
+	input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.V }, false)
+	check(
+		not cursor:IsLocked() and cursor.toggle.Modal and input.MouseBehavior == Roblox.Enum.MouseBehavior.Default,
+		"V frees the cursor"
+	)
+	check(cursor.dot.Position == h.env.UDim2.fromOffset(400, 200), "free dot follows screen mouse coordinates")
+	cursor.toggle.Activated:Fire()
+	check(cursor:IsLocked(), "small button relocks the cursor")
+	needsPointer = true
+	render.callback()
+	input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.V }, false)
+	check(
+		not cursor:IsLocked() and not cursor.toggle.Active,
+		"task automatically frees cursor and cannot be manually trapped"
+	)
+	needsPointer = false
+	render.callback()
+	check(cursor:IsLocked(), "leaving task restores normal look controls")
+	menuOpen = true
+	render.callback()
+	check(
+		not cursor:IsLocked() and input.MouseIconEnabled and not cursor.dot.Visible,
+		"Roblox menu gets native free cursor"
+	)
+	menuOpen, textFocus = false, {}
+	render.callback()
+	input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.V }, false)
+	check(not cursor.manualFree and not cursor:IsLocked(), "typing V in chat cannot toggle mouse mode")
+	textFocus = nil
+	input.WindowFocusReleased:Fire()
+	check(not cursor:IsLocked() and not cursor.dot.Visible, "alt-tab releases mouse and hides dot")
+	input.WindowFocused:Fire()
+	check(cursor:IsLocked(), "returning focus restores center lock")
+	input.PreferredInput = Roblox.Enum.PreferredInput.Touch
+	render.callback()
+	check(
+		not cursor.dot.Visible and not cursor.toggle.Modal and not cursor:IsLocked(),
+		"touch camera is not forced into mouse policy"
+	)
+	input.PreferredInput = Roblox.Enum.PreferredInput.KeyboardAndMouse
+	render.callback()
+	cursor:Toggle()
+	player.CharacterAdded:Fire()
+	check(cursor:IsLocked() and not cursor.manualFree, "respawn starts with centered camera controls")
+	local centered = h:load("src/GClient/Interactions/WorldInteraction.luau").new(gui, {
+		input = input,
+		workspace = world,
+		player = player,
+		locked = function()
+			return cursor:IsLocked()
+		end,
+		send = function() end,
+	})
+	centered:Pick(Roblox.Vector2.new(30, 40))
+	check(
+		rays[#rays][1] == "viewport" and rays[#rays][2] == 400 and rays[#rays][3] == 300,
+		"locked interactions aim through dot regardless of old pointer position"
+	)
+	cursor:Toggle()
+	centered:Pick(Roblox.Vector2.new(30, 40))
+	check(rays[#rays][1] == "screen" and rays[#rays][2] == 30, "free cursor keeps pointer targeting")
+	centered:Destroy()
+	cursor:Destroy()
+	cursor:Destroy()
+	check(
+		not render.callback and not cursor.overlay.Parent and not cursor.toggle.Parent,
+		"cleanup removes dot, toggle and frame callback"
+	)
+	check(
+		player.CameraMode == Roblox.Enum.CameraMode.Classic
+			and input.MouseIconEnabled
+			and input.MouseBehavior == Roblox.Enum.MouseBehavior.Default,
+		"cleanup restores original camera and input settings"
+	)
 end
 
 print(string.format("PASS: %d design, dialogue, lore, station isolation and network checks.", total))

@@ -100,7 +100,7 @@ Host departure transfers leadership to the oldest remaining member. Death, disco
 | Saving/reserving | `PREPARING` | Amber |
 | Transfer dispatched | `TELEPORTING` | Green |
 
-Times come from the existing server deadlines, round up, and never become negative. The status text and an existing Background UIStroke (or direct BillboardGui UIStroke) share the accent. Fonts, images, size, and position remain authored; TextSize, TextScaled, TextWrapped, and UIScale stay exactly as authored. Hidden ancestor frames are revealed. Older `GamemodeIcon`/`MapIcon`, `Players`, `GreenStatus`/`Time`, and `PartyLeader` names remain fallback bindings for pads that have not been updated.
+Times come from the existing server deadlines, round up, and never become negative. Only the status text changes color. Preserve Background.UIStroke, Title.Frame.UIStroke, direct BillboardGui strokes and all other authored sign border colors. Fonts, images, size, and position remain authored; TextSize, TextScaled, TextWrapped, and UIScale stay exactly as authored. Hidden ancestor frames are revealed. Older `GamemodeIcon`/`MapIcon`, `Players`, `GreenStatus`/`Time`, and `PartyLeader` names remain fallback bindings for pads that have not been updated.
 
 Optional string attributes `StoryIcon` and `EndlessIcon` on the **Queue folder/model** provide mode image IDs, for example `rbxassetid://123456789`. Without a nonempty override the actual icon's authored image is retained. Both ImageLabel and ImageButton icons work. Replaced icons and labels rebind within the same board; replacing the whole BillboardGui is discovered too. No art or world model is generated.
 

@@ -48,7 +48,7 @@ return {
 			At = 55,
 			Kind = "Blackout",
 			Duration = 25,
-			Warning = "POWER FAILURE. Restore the fuse box before the backup light dies.",
+			Warning = "The lights went out! Use the fuse box to turn them back on.",
 		},
 		{
 			At = 130,
@@ -60,7 +60,7 @@ return {
 			At = 215,
 			Kind = "Inspection",
 			Duration = 25,
-			Warning = "An inspector is outside. Present the repair records at the filing cabinet.",
+			Warning = "An inspector is here. Show the repair papers on the counter.",
 		},
 		{
 			At = 305,
@@ -69,5 +69,5 @@ return {
 			Warning = "Someone is at the window. Stay in the marked storage shelter until it leaves.",
 		},
 	},
-	Rules = "NIGHT DIRECTIVE 01\n1. Repair and return customer devices.\n2. Install the government package on every repair.\n3. Report suspicious files; your team can choose otherwise.\n4. Silence the disconnected phone. Do not answer.\n5. When someone watches the window, shelter in storage.",
+	Rules = "TONIGHT'S RULES 01\n1. Fix each phone and give it back.\n2. Add the government program to each phone.\n3. Found a strange message? Vote together: tell the government, hide it, or find out more.\n4. If the old phone rings, stop the ringing. Do not answer.\n5. Someone at the window? Hide in the marked spot in the back room.",
 }

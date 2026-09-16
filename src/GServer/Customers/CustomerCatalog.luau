@@ -396,18 +396,18 @@ Catalog.Devices = {
 	"Railway C3",
 }
 Catalog.Requirements = {
-	{ Name = "Standard service", Contacts = 3, SequenceLength = 4 },
-	{ Name = "Quick contact check", Contacts = 2, SequenceLength = 3 },
-	{ Name = "Depot acceptance test", Contacts = 3, SequenceLength = 5 },
-	{ Name = "Exchange calibration", Contacts = 2, SequenceLength = 6 },
-	{ Name = "Cold-weather service", Contacts = 3, SequenceLength = 4 },
-	{ Name = "Factory inspection", Contacts = 3, SequenceLength = 6 },
-	{ Name = "Receiver certification", Contacts = 2, SequenceLength = 5 },
-	{ Name = "Overnight delivery check", Contacts = 3, SequenceLength = 5 },
-	{ Name = "Transit safety check", Contacts = 2, SequenceLength = 4 },
-	{ Name = "Government acceptance", Contacts = 3, SequenceLength = 6 },
-	{ Name = "Workshop recalibration", Contacts = 3, SequenceLength = 3 },
-	{ Name = "Archive unit inspection", Contacts = 2, SequenceLength = 6 },
+	{ Name = "Fix and check the phone", Contacts = 3, SequenceLength = 4 },
+	{ Name = "Quick button check", Contacts = 2, SequenceLength = 3 },
+	{ Name = "Check before delivery", Contacts = 3, SequenceLength = 5 },
+	{ Name = "Match the phone settings", Contacts = 2, SequenceLength = 6 },
+	{ Name = "Check after cold weather", Contacts = 3, SequenceLength = 4 },
+	{ Name = "Check the new phone", Contacts = 3, SequenceLength = 6 },
+	{ Name = "Check the phone sound", Contacts = 2, SequenceLength = 5 },
+	{ Name = "Check tonight's delivery", Contacts = 3, SequenceLength = 5 },
+	{ Name = "Check after its trip", Contacts = 2, SequenceLength = 4 },
+	{ Name = "Check for the government", Contacts = 3, SequenceLength = 6 },
+	{ Name = "Reset the phone settings", Contacts = 3, SequenceLength = 3 },
+	{ Name = "Check the old phone", Contacts = 2, SequenceLength = 6 },
 }
 for a, first in ipairs(firstNames) do
 	for b, last in ipairs(surnames) do

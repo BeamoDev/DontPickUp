@@ -415,13 +415,16 @@ function Methods:Action(player, action, payload)
 		else
 			self.workSerial = (self.workSerial or 0) + 1
 			lane.work.Id = self.id .. "_work_" .. self.workSerial
+			local seed = order and order.PuzzleSeed or (self.d.random or math.random)(1, 1000000)
+			local easy = order ~= nil and Puzzles.IsEasy(order.Tutorial, self.night, seed)
 			lane.work.Puzzle = Puzzles.New(
 				action,
 				order and order.Fault,
-				order and order.PuzzleSeed or (self.d.random or math.random)(1, 1000000),
+				seed,
 				order and order.SequenceLength,
 				self.d.clock(),
-				not order or (not order.Tutorial and self.night > 1)
+				not easy,
+				easy
 			)
 			lane.work.EndsAt = self.d.clock() + self.c.PuzzleTimeout
 		end

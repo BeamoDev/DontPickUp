@@ -81,11 +81,7 @@ function Billboard:Render(queue, state, now)
 	if status and (status:IsA("TextLabel") or status:IsA("TextButton")) then
 		set(status, "TextColor3", color)
 	end
-	local stroke = background and background:FindFirstChildWhichIsA("UIStroke")
-		or board:FindFirstChildWhichIsA("UIStroke")
-	if stroke then
-		set(stroke, "Color", color)
-	end
+	-- Queue state colors only the status text. All authored borders stay untouched.
 	if icon and (icon:IsA("ImageLabel") or icon:IsA("ImageButton")) then
 		-- Capture each actual image instance before applying a mode override. Replacement
 		-- images can replicate without replacing their BillboardGui.

@@ -352,15 +352,18 @@ function Presentation:Update(state, modalOpen)
 				self.fill.Size = size
 			end
 		end
-		local text = own and work and work.Interactive and "COMPLETE THE BENCH CONTROLS"
-			or working and (string.upper(work.Action) .. " / " .. (order.Fault or "PHONE"))
-			or order.Step == "Diagnose" and "CHECK THE PHONE TO FIND THE FAULT"
+		local text = own and work and work.Interactive and "FOLLOW THE STEPS ON THE PHONE"
+			or working and "PUTTING THE PART IN..."
+			or order.Step == "Diagnose" and "FIND THE BROKEN PART"
 			or order.Step == "Collect" and ("NEEDED: " .. string.upper(order.Fault or "PART") .. " / STOCKROOM")
 			or order.Step == "Repair" and not order.PartDelivered and ("WAITING FOR " .. string.upper(
 				order.Fault or "PART"
 			))
 			or order.Step == "Secure" and ("TIGHTEN SCREWS: " .. (order.Contacts or 0) .. "/" .. (order.RequiredContacts or 4))
-			or (string.upper(order.Step) .. " / " .. (order.Device or "PHONE"))
+			or order.Step == "Install" and "ADD THE PHONE PROGRAM"
+			or order.Step == "Test" and "CHECK THAT THE PHONE WORKS"
+			or order.Step == "Return" and "GIVE THE PHONE BACK AT THE COUNTER"
+			or "FOLLOW THE NEXT REPAIR STEP"
 		if self.label.Text ~= text then
 			self.label.Text = text
 		end

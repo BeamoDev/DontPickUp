@@ -62,6 +62,9 @@ function Interaction.new(gui, deps)
 	return self
 end
 function Interaction:Pick(position)
+	if self.d.locked and self.d.locked() then
+		position = nil -- The visible center dot and interaction ray must agree.
+	end
 	local camera, character = self.d.workspace.CurrentCamera, self.d.player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not camera or not root then

@@ -37,11 +37,11 @@ end)
 data = require(root.Core.DataService).new(services, Config)
 local tickets = require(root.Core.TicketStore).new(services, Config)
 travel = require(root.Core.TravelService).new(services, Config, data, tickets)
-session = require(root.GameSession).new(services, Config, data, tickets)
+session = require(root.Services.GameSession).new(services, Config, data, tickets)
 network = require(root.Core.Network).new(services, "Game")
-network.root:SetAttribute("PrototypeEnabled", require(root.PrototypeConfig).Enabled)
-if require(root.PrototypeConfig).Enabled then
-	prototype = require(root.GamePrototype).new(services, data, session, network)
+network.root:SetAttribute("PrototypeEnabled", require(root.Shifts.PrototypeConfig).Enabled)
+if require(root.Shifts.PrototypeConfig).Enabled then
+	prototype = require(root.Services.GamePrototype).new(services, data, session, network)
 end
 require(root.Runtime).Set({ Data = data, Session = session, Travel = travel, Prototype = prototype })
 network:Bind(function(player, action, payload)

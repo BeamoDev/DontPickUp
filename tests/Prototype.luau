@@ -1,231 +1,14 @@
 local Harness = require("./Harness")
+local benchMove = require("./BenchDriver")
 local total = 0
 local function check(value, message)
 	assert(value, message)
 	total += 1
 end
 
+local createFixture = require("./ShiftFixture")
 local function fixture(count)
-	local h = Harness.Environment()
-	local c = h:load("src/GServer/PrototypeConfig.luau")
-	c.Director.Enabled = false -- Existing fixtures deliberately exercise the fixed scenario schedule.
-	local players, records, saves, health, tutorial, evidence, nearby = {}, {}, {}, {}, {}, {}, {}
-	local session = { State = "Ready", Ready = true }
-	local debugMessages = {}
-	local seated, parts = {}, {}
-	local gear, gearMode = {}, { Explicit = false }
-	local run = h:load("src/GServer/ShiftService.luau").new({
-		debug = function(message)
-			table.insert(debugMessages, message)
-		end,
-		clock = function()
-			return h.time
-		end,
-		id = function()
-			h.serial += 1
-			return "prototype_" .. h.serial
-		end,
-		present = function(p)
-			return p.Parent == h.players
-		end,
-		ready = function()
-			return true
-		end,
-		near = function(p, station)
-			return nearby[p] == nil or nearby[p] == station
-		end,
-		seated = function(p)
-			return seated[p] == true
-		end,
-		sit = function(p)
-			for other, value in pairs(seated) do
-				if other ~= p and value then
-					return false, "BenchOccupied"
-				end
-			end
-			seated[p] = true
-			return true
-		end,
-		stand = function(p)
-			seated[p] = false
-		end,
-		givePart = function(p, record)
-			parts[p] = record
-			return true
-		end,
-		hasPart = function(p, record)
-			return parts[p] == record
-		end,
-		clearPart = function(p)
-			parts[p] = nil
-		end,
-		hasGear = function(p, id)
-			return not gearMode.Explicit or gear[p] and gear[p][id] == true
-		end,
-		giveGear = function(p, id)
-			gear[p] = gear[p] or {}
-			gear[p][id] = true
-			return true
-		end,
-		clearGear = function(p)
-			gear[p] = nil
-		end,
-		sessionReady = function()
-			return session.Ready
-		end,
-		sessionState = function()
-			return session.State
-		end,
-		mode = function()
-			return session.Mode or "Story"
-		end,
-		reset = function(p)
-			health[p] = 100
-		end,
-		health = function(p, hp)
-			health[p] = hp
-		end,
-		outcome = function(p, outcome)
-			records[p] = records[p] or {}
-			table.insert(records[p], outcome)
-			return true
-		end,
-		persist = function(p)
-			saves[p] = (saves[p] or 0) + 1
-		end,
-		saveStatus = function()
-			return "Saved"
-		end,
-		tutorial = function(p)
-			tutorial[p] = true
-		end,
-		evidence = function(p, id)
-			evidence[p] = id
-			return true
-		end,
-	}, c)
-	for i = 1, count or 1 do
-		players[i] = h:player(i)
-		run:Add(players[i])
-	end
-	local f = {
-		h = h,
-		run = run,
-		c = c,
-		p = players,
-		records = records,
-		saves = saves,
-		health = health,
-		tutorial = tutorial,
-		evidence = evidence,
-		near = nearby,
-		session = session,
-		seated = seated,
-		parts = parts,
-		gear = gear,
-		gearMode = gearMode,
-		debugMessages = debugMessages,
-	}
-	function f:advance(seconds)
-		h.time += seconds
-		run:Tick()
-		-- Existing shift scenarios use a deterministic input driver, never timer completion.
-		if seconds == c.WorkSeconds and not self.manualPuzzles and run.work and run.work.Puzzle then
-			self:solve()
-		end
-	end
-	function f:solve()
-		local work = run.work
-		local attempts = 0
-		while run.work == work and work.Puzzle do
-			attempts += 1
-			assert(attempts < 30, "puzzle driver must terminate")
-			local puzzle = work.Puzzle
-			local move = puzzle.Answer or puzzle.Sequence and puzzle.Sequence[puzzle.Progress + 1] or 4
-			if puzzle.Cells then
-				for i, value in ipairs(puzzle.Cells) do
-					if value ~= puzzle.Targets[i] then
-						move = i
-						break
-					end
-				end
-			end
-			h.time += 0.6
-			run:Tick()
-			if run.work ~= work then
-				break
-			end
-			assert(run:Action(work.Player, "PuzzleInput", {
-				OrderId = work.OrderId,
-				WorkId = work.Id,
-				Move = move,
-				PuzzleRevision = puzzle.Revision,
-			}))
-		end
-		h.time += c.FittingSeconds + 0.6
-		run:Tick()
-	end
-	function f:act(action, player, extra)
-		local actor = player or players[1]
-		if action == "ClockIn" and not extra then
-			run:Action(actor, "OpenClock", {})
-			extra = { FocusId = run.players[actor].Focus and run.players[actor].Focus.Id }
-		end
-		-- Legacy rule scenarios assume the avatar is already at its station.
-		-- Explicit workshop scenarios below disable this setup and exercise every action.
-		if not self.explicitWorkshop then
-			if action == "Collect" or action == "Restock" then
-				seated[actor] = false
-			end
-			if table.find({ "Diagnose", "Repair", "Secure", "Install", "Test" }, action) then
-				seated[actor] = true
-			end
-			if action == "Repair" and run.players[actor].CarriedPart then
-				run.players[actor].CarriedPart, parts[actor] = nil, nil
-				run.order.PartHolder, run.order.PartDelivered = nil, true
-			end
-		end
-		local payload = extra
-			or {
-				OrderId = run.order and run.order.Id,
-				EventId = run.event and run.event.Id,
-				Contact = run.order and (run.order.Contacts or 0) + 1,
-			}
-		return run:Action(actor, action, payload)
-	end
-	function f:start()
-		run:Tick()
-		self:advance(3)
-		for _, p in ipairs(players) do
-			self:act("ClockIn", p)
-			self:act("ReadRules", p)
-		end
-		self:advance(c.ArrivalSeconds)
-	end
-	function f:repair()
-		check(self:act("TakeOrder"), "accept customer")
-		for _, action in ipairs({ "Diagnose", "Collect", "Repair", "Install" }) do
-			if action == "Install" then
-				for _ = 1, run.order.RequiredContacts or c.SecureContacts do
-					self:advance(0.6)
-					check(self:act("Secure"), "secure contact before installation")
-				end
-			end
-			self:advance(0.6)
-			check(self:act(action), "start " .. action)
-			self:advance(c.WorkSeconds)
-		end
-		if run.order.Step == "Evidence" then
-			for _, p in ipairs(players) do
-				self:act("Vote", p, { OrderId = run.order.Id, Choice = "Report" })
-			end
-		end
-		self:advance(0.6)
-		check(self:act("Test"), "start final test")
-		self:advance(c.WorkSeconds)
-		check(self:act("Return"), "return repair")
-	end
-	return f
+	return createFixture(count, check)
 end
 
 do
@@ -237,7 +20,10 @@ do
 	f.session.Ready = true
 	f.run:Tick()
 	f:advance(3)
-	check(f.run.phase == "Tutorial" and not f.run.order, "tutorial opens automatically after party ready")
+	check(
+		f.run.phase == "Tutorial" and not f.run.stations.Bench.order,
+		"tutorial opens automatically after party ready"
+	)
 	check(
 		f.run:Snapshot(f.p[1]).NeedsClockIn and not f.run:Snapshot(f.p[1]).NeedsRules,
 		"entry comes before directive modal"
@@ -245,17 +31,17 @@ do
 	check(not f:act("ReadRules", f.p[1]), "cannot acknowledge training before clocking in")
 	f:act("ClockIn", f.p[1])
 	f:act("ReadRules", f.p[1])
-	check(not f.run.order, "training waits for all staff to read directive")
+	check(not f.run.stations.Bench.order, "training waits for all staff to read directive")
 	f:act("ClockIn", f.p[2])
 	f:act("ReadRules", f.p[2])
 	f:advance(f.c.ArrivalSeconds)
 	check(
-		f.run.order.Step == "Waiting" and not f.run.order.ExpiresAt,
+		f.run.stations.Bench.order.Step == "Waiting" and not f.run.stations.Bench.order.ExpiresAt,
 		"first customer waits without tutorial timeout"
 	)
 	f:advance(400)
 	check(
-		f.run.phase == "Tutorial" and not f.run.event and f.run.order.Step == "Waiting",
+		f.run.phase == "Tutorial" and not f.run.event and f.run.stations.Bench.order.Step == "Waiting",
 		"tutorial has no clock pressure or hazards"
 	)
 	f:repair()
@@ -280,20 +66,23 @@ do
 	check(not f:act("Repair"), "cannot skip diagnosis")
 	f:advance(0.6)
 	check(f:act("Diagnose"), "diagnosis begins")
-	check(f.run.order.Step == "Diagnose", "work does not finish on click")
+	check(f.run.stations.Bench.order.Step == "Diagnose", "work does not finish on click")
 	f.near[f.p[1]] = "Counter"
 	f:advance(f.c.WorkSeconds)
-	check(f.run.order.Step == "Diagnose" and not f.run.work, "walking away cancels work without advancing")
+	check(
+		f.run.stations.Bench.order.Step == "Diagnose" and not f.run.stations.Bench.work,
+		"walking away cancels work without advancing"
+	)
 	f.near[f.p[1]] = nil
 	f:act("Diagnose")
 	f:advance(f.c.WorkSeconds)
-	local old = f.run.order.Id
+	local old = f.run.stations.Bench.order.Id
 	check(not f:act("Collect", nil, { OrderId = "stale" }), "stale order action rejected")
 	f:advance(0.6)
 	f:act("Collect")
 	f:advance(f.c.WorkSeconds)
 	check(
-		f.run.stock.Battery == 3 and f.run.order.Step == "Repair",
+		f.run.stock.Battery == 3 and f.run.stations.Bench.order.Step == "Repair",
 		"part consumed exactly once on completed collection"
 	)
 	f:advance(0.6)
@@ -306,15 +95,15 @@ do
 	f:start()
 	f:repair()
 	f.run:_newOrder(false)
-	f.run.order.Sensitive, f.run.order.Step = true, "Evidence"
-	f.run.order.Votes, f.run.order.VoteEndsAt = {}, f.h.time + f.c.VoteSeconds
-	local id = f.run.order.Id
+	f.run.stations.Bench.order.Sensitive, f.run.stations.Bench.order.Step = true, "Evidence"
+	f.run.stations.Bench.order.Votes, f.run.stations.Bench.order.VoteEndsAt = {}, f.h.time + f.c.VoteSeconds
+	local id = f.run.stations.Bench.order.Id
 	f:act("Vote", f.p[1], { OrderId = id, Choice = "Investigate" })
-	check(f.run.order.Step == "Evidence", "one teammate cannot decide for three")
+	check(f.run.stations.Bench.order.Step == "Evidence", "one teammate cannot decide for three")
 	check(not f:act("Vote", f.p[2], { OrderId = id, Choice = "Cheat" }), "invalid evidence choice rejected")
 	f:act("Vote", f.p[2], { OrderId = id, Choice = "Investigate" })
 	check(
-		f.run.order.Step == "Test" and f.run.suspicion == 30,
+		f.run.stations.Bench.order.Step == "Test" and f.run.suspicion == 30,
 		"strict majority resolves once with consequences"
 	)
 	check(f.evidence[f.p[1]] == "prototype_ward7", "investigation unlocks server-issued evidence")
@@ -327,9 +116,10 @@ do
 	f:start()
 	f:repair()
 	f.run:_newOrder(false)
-	f.run.order.Step, f.run.order.Votes, f.run.order.VoteEndsAt = "Evidence", {}, f.h.time + 5
-	f:act("Vote", f.p[1], { OrderId = f.run.order.Id, Choice = "Hide" })
-	f:act("Vote", f.p[2], { OrderId = f.run.order.Id, Choice = "Report" })
+	f.run.stations.Bench.order.Step, f.run.stations.Bench.order.Votes, f.run.stations.Bench.order.VoteEndsAt =
+		"Evidence", {}, f.h.time + 5
+	f:act("Vote", f.p[1], { OrderId = f.run.stations.Bench.order.Id, Choice = "Hide" })
+	f:act("Vote", f.p[2], { OrderId = f.run.stations.Bench.order.Id, Choice = "Report" })
 	f:advance(5)
 	check(f.run.decisions[1] == "Report", "vote timeout tie prefers report")
 end
@@ -410,10 +200,7 @@ do
 	f:repair()
 	f.session.State, f.session.Ready = "Interrupted", false
 	f.run:Tick()
-	check(
-		f.run.phase == "Results" and f.run.reason == "Interrupted",
-		"party interruption cancels active shift"
-	)
+	check(f.run.phase == "Results" and f.run.reason == "Interrupted", "party interruption cancels active shift")
 	check(next(f.records) == nil, "interruption does not fabricate survival or deaths")
 end
 
@@ -426,7 +213,7 @@ do
 	check(not f:act("Diagnose", f.p[2]), "two staff cannot start the same repair work")
 	f.run:Remove(f.p[1])
 	check(
-		not f.run.work and f.run.order.Step == "Diagnose",
+		not f.run.stations.Bench.work and f.run.stations.Bench.order.Step == "Diagnose",
 		"disconnect releases unfinished workstation work"
 	)
 	f:advance(0.6)
@@ -438,23 +225,20 @@ do
 	f:start()
 	f:repair()
 	f.run:_newOrder(false)
-	f.run.order.Step, f.run.order.ExpiresAt = "Return", f.h.time + 1
+	f.run.stations.Bench.order.Step, f.run.stations.Bench.order.ExpiresAt = "Return", f.h.time + 1
 	f.h.time += 2
 	local revenue = f.run.revenue
-	check(
-		not f:act("Return") and f.run.revenue == revenue,
-		"expired order cannot be returned between timer ticks"
-	)
+	check(not f:act("Return") and f.run.revenue == revenue, "expired order cannot be returned between timer ticks")
 	f.run:Tick()
-	check(f.run.missed == 1 and not f.run.order, "expired customer leaves and counts as missed")
+	check(f.run.missed == 1 and not f.run.stations.Bench.order, "expired customer leaves and counts as missed")
 	f.run:_newOrder(false)
-	f.run.order.Step = "Install"
+	f.run.stations.Bench.order.Step = "Install"
 	f:advance(0.6)
 	f:act("Install")
 	f.run.event = { Kind = "Blackout", Id = "1", EndsAt = f.h.time + 20, Warning = "Restore power" }
 	f:advance(f.c.WorkSeconds)
 	check(
-		f.run.order.Step == "Install" and not f.run.work,
+		f.run.stations.Bench.order.Step == "Install" and not f.run.stations.Bench.work,
 		"power failure cancels an in-progress install without granting completion"
 	)
 end
@@ -486,7 +270,7 @@ do
 	f:start()
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Services/GamePrototype.luau")
 	local prototype = setmetatable({ run = f.run }, prototypeClass)
 	local stranger = f.h:player(99)
 	local response = prototype:Request(stranger, "GetPrototype", {})
@@ -497,9 +281,12 @@ do
 	response = prototype:Request(
 		f.p[1],
 		"PrototypeAction",
-		{ RunId = "previous_run", Action = "TakeOrder", OrderId = f.run.order.Id }
+		{ RunId = "previous_run", Action = "TakeOrder", OrderId = f.run.stations.Bench.order.Id }
 	)
-	check(not response.Ok and f.run.order.Step == "Waiting", "stale run ID cannot operate new session order")
+	check(
+		not response.Ok and f.run.stations.Bench.order.Step == "Waiting",
+		"stale run ID cannot operate new session order"
+	)
 end
 
 -- Exercise the generated world/UI adapters against exact Roblox-shaped instances.
@@ -520,16 +307,16 @@ do
 	check(act("Sit", "Bench") and f.run:Snapshot(player).Seated, "sit action enters the repair chair")
 	check(act("Diagnose", "Bench"), "seated player begins diagnosis")
 	check(f:act("Stand"), "stand is accepted while work and cooldown are active")
-	check(not f.run.work and f.run.order.Step == "Diagnose", "standing cancels unfinished diagnosis")
+	check(
+		not f.run.stations.Bench.work and f.run.stations.Bench.order.Step == "Diagnose",
+		"standing cancels unfinished diagnosis"
+	)
 	check(act("Sit", "Bench") and act("Diagnose", "Bench"), "player can resume cancelled diagnosis")
 	f:advance(f.c.WorkSeconds)
 	check(f.run:Snapshot(player).Order.Fault == "Battery", "completed diagnosis reveals the replacement type")
 	check(f:act("Stand"), "solo repairer can leave for the parts room")
-	ok, code = act("Collect", "Part_Speaker", { OrderId = f.run.order.Id, Part = "Speaker" })
-	check(
-		not ok and code == "WrongPart" and f.run.stock.Battery == 4,
-		"wrong shelf cannot spend stock or issue a part"
-	)
+	ok, code = act("Collect", "Part_Speaker", { OrderId = f.run.stations.Bench.order.Id, Part = "Speaker" })
+	check(not ok and code == "WrongPart" and f.run.stock.Battery == 4, "wrong shelf cannot spend stock or issue a part")
 	check(act("Collect", "Part_Battery"), "matching shelf starts collection")
 	f:advance(f.c.WorkSeconds)
 	check(
@@ -538,31 +325,34 @@ do
 	)
 	check(f.run:Snapshot(player).CarriedPart == "Battery", "HUD receives carried part type")
 	check(
-		act("DepositPart", "Bench") and not f.parts[player] and f.run.order.PartDelivered,
+		act("DepositPart", "Bench") and not f.parts[player] and f.run.stations.Bench.order.PartDelivered,
 		"placing tool at bench transfers the reservation to the phone"
 	)
 	check(not act("DepositPart", "Bench"), "deposit cannot be replayed")
-	check(
-		act("Sit", "Bench") and act("Repair", "Bench"),
-		"seated repair consumes deposited component through work"
-	)
+	check(act("Sit", "Bench") and act("Repair", "Bench"), "seated repair consumes deposited component through work")
 	f:advance(f.c.WorkSeconds)
-	check(f.run.order.Step == "Secure" and not f.run.order.PartDelivered, "component is fitted once")
-	check(not act("Install", "Bench"), "installation waits for all three contacts")
+	check(
+		f.run.stations.Bench.order.Step == "Secure" and not f.run.stations.Bench.order.PartDelivered,
+		"component is fitted once"
+	)
+	check(not act("Install", "Bench"), "installation waits for all four screws")
 	check(f:act("Stand") and not act("Secure", "Bench"), "contacts require physical seating")
 	check(act("Sit", "Bench"), "repairer can reseat to secure the fitted component")
 	check(not act("Secure", "Bench", { OrderId = "stale" }), "stale contact request cannot alter phone")
-	for i = 1, f.c.SecureContacts do
-		check(act("Secure", "Bench") and f.run.order.Contacts == i, "each contact advances once")
-		check(not f:act("Secure"), "duplicate rapid contact requests are rejected")
-		if i == 1 then
-			check(
-				not act("Secure", "Bench", { OrderId = f.run.order.Id, Contact = 1 })
-					and f.run.order.Contacts == 1,
-				"delayed contact intent cannot advance the next contact"
-			)
-		end
-	end
+	check(
+		act("Secure", "Bench") and f.run.stations.Bench.order.Contacts == 0,
+		"starting secure does not tighten any screws"
+	)
+	check(not f:act("Secure"), "duplicate secure requests are rejected while puzzle is open")
+	check(
+		not act("Secure", "Bench", { OrderId = f.run.stations.Bench.order.Id, Contact = 1 }),
+		"legacy contact clicks cannot bypass puzzle"
+	)
+	f:solve()
+	check(
+		f.run.stations.Bench.order.Contacts == 4 and f.run.stations.Bench.order.Step == "Install",
+		"reassembly and all four screws gate installation"
+	)
 	check(act("Install", "Bench"), "installation starts after fitting")
 	f:advance(f.c.WorkSeconds)
 	check(act("Test", "Bench"), "repaired phone can be tested")
@@ -591,21 +381,18 @@ do
 	f:advance(f.c.WorkSeconds)
 	act(b, "Collect")
 	f:advance(f.c.WorkSeconds)
-	check(
-		f.run:Snapshot(a).Order.PartCarrier == b.DisplayName,
-		"repairer sees teammate carrying the replacement"
-	)
+	check(f.run:Snapshot(a).Order.PartCarrier == b.DisplayName, "repairer sees teammate carrying the replacement")
 	ok, code = act(a, "Repair")
 	check(not ok and code == "MissingPart", "repair cannot start from a teammate's undeployed tool")
 	check(act(b, "DepositPart"), "restocker deposits while another player remains seated")
 	f.run:Damage(b, 100, "test")
 	check(
-		f.run.order.PartDelivered and act(a, "Repair"),
+		f.run.stations.Bench.order.PartDelivered and act(a, "Repair"),
 		"deposited part survives carrier death and can be fitted by teammate"
 	)
 	f:advance(f.c.WorkSeconds)
 	check(
-		f.run.order.Step == "Secure" and f.run.stock.Battery == 3,
+		f.run.stations.Bench.order.Step == "Secure" and f.run.stock.Battery == 3,
 		"cooperative fitting spends exactly one stock"
 	)
 end
@@ -623,7 +410,7 @@ do
 	f.parts[a] = nil
 	f:advance(0.25)
 	check(
-		f.run.order.Step == "Collect" and f.run.stock.Battery == 4 and not f.run.players[a].CarriedPart,
+		f.run.stations.Bench.order.Step == "Collect" and f.run.stock.Battery == 4 and not f.run.players[a].CarriedPart,
 		"destroyed or lost tool returns one reservation to its shelf"
 	)
 	f:advance(1)
@@ -632,7 +419,7 @@ do
 	f:advance(f.c.WorkSeconds)
 	f.run:Remove(a)
 	check(
-		f.run.stock.Battery == 4 and f.run.order.Step == "Collect" and not f.parts[a],
+		f.run.stock.Battery == 4 and f.run.stations.Bench.order.Step == "Collect" and not f.parts[a],
 		"disconnecting carrier cannot strand the shared order"
 	)
 end
@@ -642,18 +429,24 @@ do
 	f:start()
 	f:repair()
 	f.c.Events = { { At = 1, Kind = "Blackout", Duration = 10, Warning = "Test outage" } }
-	f.run.nextOrder = f.run.nightAt + 1
+	f.run.stations.Bench.nextOrder = f.run.nightAt + 1
 	f:advance(1)
 	check(
-		f.run.event and not f.run.order,
+		f.run.event and not f.run.stations.Bench.order,
 		"disturbance wins when arrival and hazard are due on the same tick"
 	)
 	f:advance(10)
-	check(not f.run.order and f.run.resumeAt, "normal arrivals remain stopped through disturbance recovery")
+	check(
+		not f.run.stations.Bench.order and f.run.resumeAt,
+		"normal arrivals remain stopped through disturbance recovery"
+	)
 	f:advance(f.c.AfterDisturbanceSeconds - 1)
-	check(not f.run.order, "recovery quiet period prevents immediate customer spawn")
+	check(not f.run.stations.Bench.order, "recovery quiet period prevents immediate customer spawn")
 	f:advance(1)
-	check(f.run.order and f.run.order.Step == "Arriving", "customers resume once shop is safe")
+	check(
+		f.run.stations.Bench.order and f.run.stations.Bench.order.Step == "Arriving",
+		"customers resume once shop is safe"
+	)
 end
 
 do
@@ -663,7 +456,7 @@ do
 	f.run:_newOrder(false)
 	f.c.Events = { { At = 0, Kind = "Call", Duration = 10, Warning = "Test call" } }
 	f:advance(0.25)
-	local order = f.run.order
+	local order = f.run.stations.Bench.order
 	check(
 		order.PausedAt and f.run:Snapshot(f.p[1]).ArrivalsPaused,
 		"approaching customer is suspended during disturbance"
@@ -691,15 +484,12 @@ do
 		"evidence votes and patience do not expire while handling danger"
 	)
 	f:advance(f.c.AfterDisturbanceSeconds)
-	check(
-		order.ExpiresAt > oldExpiry and order.Step == "Evidence",
-		"paused deadlines resume with time preserved"
-	)
+	check(order.ExpiresAt > oldExpiry and order.Step == "Evidence", "paused deadlines resume with time preserved")
 end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/CustomerCatalog.luau")
+	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
 	local ids, normal = {}, 0
 	check(#catalog.Customers == 270, "customer database contains 270 unique records")
 	for _, customer in ipairs(catalog.Customers) do
@@ -755,11 +545,13 @@ do
 	)
 	local before = f.run.revision
 	f:advance(f.c.WorkSeconds)
-	check(f.run.revision > before and not f.run.work, "work completion publishes immediately")
+	check(f.run.revision > before and not f.run.stations.Bench.work, "work completion publishes immediately")
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Services/GamePrototype.luau")
 	local pushes = 0
+	f.run.dialogueChannel:Clear()
+	f.run.dialogue = nil
 	local prototype = setmetatable({
 		run = f.run,
 		world = { Render = function() end },
@@ -827,6 +619,9 @@ do
 	h.env.Instance = {
 		new = function(class)
 			local object = h.instance(class)
+			if class == "TextButton" then
+				object.InputBegan = signal()
+			end
 			if class == "Sound" then
 				object.Play = function(self)
 					self.Played = true
@@ -874,8 +669,8 @@ do
 			end,
 		},
 	}
-	local config = h:load("src/GServer/PrototypeConfig.luau")
-	local world = h:load("src/GServer/PrototypeWorld.luau").new(services, config)
+	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau")
+	local world = h:load("src/GServer/World/PrototypeWorld.luau").new(services, config)
 	check(
 		workspace.DPU_Prototype and world.spawn.Parent == world.folder,
 		"prototype builds isolated shop and staff spawn"
@@ -884,15 +679,42 @@ do
 		world.stations.Counter and world.stations.Bench and world.stations.Stock and world.stations.Shelter,
 		"all required work and shelter stations exist"
 	)
-	check(#world.folder:GetChildren() < 90, "generated scene remains bounded")
+	check(#world.folder:GetChildren() < 90, "compact generated scene remains bounded")
 	check(
-		world.origin:PointToObjectSpace(world.spawn.CFrame.Position).X > 24,
-		"new staff spawn outside the shop walls"
+		not world.stations.TestBench and not world.workshop.seats.TestBench and not world.testPhone,
+		"all phone work shares one bench and chair"
 	)
 	check(
-		world.folder.RightWallFront
-			and world.folder.RightWallBack
-			and not world.folder:FindFirstChild("RightWall"),
+		world.stations.Tools and not world.stations.Tool_Tester and not world.stations.Tool_Cartridge,
+		"one repair kit replaces scattered tool pickups"
+	)
+	check(world.folder:FindFirstChild("StockroomDoorway") ~= nil, "one doorway connects shop and stockroom")
+	for _, point in ipairs({ { 0, 8 }, { 0, 0 }, { 0, 16 }, { 0, -8 } }) do
+		local center = world.origin * Roblox.Vector3.new(point[1], 3.5, point[2])
+		for _, object in ipairs(world.folder:GetChildren()) do
+			if object:IsA("Part") and object.CanCollide ~= false then
+				local delta = object.CFrame:PointToObjectSpace(center)
+				check(
+					not (
+							math.abs(delta.X) < object.Size.X / 2 + 0.8
+							and math.abs(delta.Z) < object.Size.Z / 2 + 0.8
+							and math.abs(delta.Y) < object.Size.Y / 2 + 2.5
+						),
+					"doorway has avatar clearance: " .. object.Name
+				)
+			end
+		end
+	end
+	local smallSign = world.stations.Bench.Sign
+	check(
+		smallSign.Size == Roblox.UDim2.fromScale(3.8, 0.55)
+			and smallSign.MaxDistance == 22
+			and smallSign.TextLabel.TextColor3 == Roblox.Color3.fromRGB(228, 224, 216),
+		"placeholder labels are small, white and distance-limited"
+	)
+	check(world.origin:PointToObjectSpace(world.spawn.CFrame.Position).X > 24, "new staff spawn outside the shop walls")
+	check(
+		world.folder.RightWallFront and world.folder.RightWallBack and not world.folder:FindFirstChild("RightWall"),
 		"staff doorway replaces the solid side wall"
 	)
 	local template = services.ReplicatedStorage.DontPickUpTemplates.RepairPhone
@@ -913,14 +735,25 @@ do
 	end
 	local p = h:player(1)
 	local character = h.instance("Model")
+	character.DescendantAdded = signal()
 	p.Character = character
 	local root = h.instance("Part")
 	root.Name, root.Parent = "HumanoidRootPart", character
 	local humanoid = h.instance("Humanoid")
 	humanoid.Name, humanoid.Parent, humanoid.Health = "Humanoid", character, 100
-	root.Position = world.origin * Roblox.Vector3.new(24.2, 3, 6)
+	root.Position = world.origin * Roblox.Vector3.new(22.2, 3, 5)
 	check(not world:Near(p, "Timeclock"), "timeclock rejects use through the exterior wall")
-	root.Position = world.origin * Roblox.Vector3.new(21, 3, 6)
+	check(world:Outside(p) == false, "doorway tolerance avoids exposure flicker at the shop edge")
+	root.Position = world.origin * Roblox.Vector3.new(30, 3, 5)
+	check(world:Outside(p) == true, "exterior spawn position counts as outside for night exposure")
+	root.Position = world.origin * Roblox.Vector3.new(0, 16, 2)
+	check(world:Outside(p) == true, "being above the roof does not count as shelter")
+	local originalOrigin = world.origin
+	world.origin = Roblox.CFrame.new(100, 0, -300) * Roblox.CFrame.Angles(0, 0.7, 0)
+	root.Position = world.origin * Roblox.Vector3.new(-15, 3, 15)
+	check(world:Outside(p) == false, "outside classification follows translated and rotated shop origin")
+	world.origin = originalOrigin
+	root.Position = world.origin * Roblox.Vector3.new(18, 3, 3)
 	check(world:Near(p, "Timeclock"), "clock-in is reachable inside the entrance")
 	root.Position = world.stations.Shelter.Position + Roblox.Vector3.new(0, 3, 0)
 	check(world:Near(p, "Shelter"), "shelter accepts a living avatar above marked floor")
@@ -928,7 +761,7 @@ do
 	check(not world:Near(p, "Shelter"), "shelter rejects an avatar outside its actual bounds")
 	root.Position = world.origin * Roblox.Vector3.new(-21, 3, 7)
 	check(not world:Near(p, "Part_Battery"), "shelf interaction cannot pass through parts-room front wall")
-	root.Position = world.origin * Roblox.Vector3.new(-19, 3, 10)
+	root.Position = world.origin * Roblox.Vector3.new(-19, 3, 12)
 	check(
 		world:Near(p, "Part_Battery") and not world:Near(p, "Bench"),
 		"parts must be collected inside the room, away from the repair chair"
@@ -958,10 +791,7 @@ do
 	local forged = actual:Clone()
 	forged.Parent = backpack
 	actual.Parent = nil
-	check(
-		not world.workshop:HasPart(p, record),
-		"matching attributes on a cloned tool cannot forge authority"
-	)
+	check(not world.workshop:HasPart(p, record), "matching attributes on a cloned tool cannot forge authority")
 	world.workshop:ClearPart(p)
 	check(forged.Parent == backpack, "part cleanup removes only the tool issued by this adapter")
 	forged:Destroy()
@@ -975,14 +805,22 @@ do
 	world.workshop:Stand(p)
 	check(not world.workshop:IsSeated(p), "standing invalidates physical seating immediately")
 	world.workshop.seat.Occupant, humanoid.SeatPart = nil, nil
+	check(not world.workshop:Sit(p, "OtherSeat"), "unknown chair cannot authorize work")
+	root.Position = world.origin * Roblox.Vector3.new(5.5, 3, 10)
+	check(not world:Near(p, "Records"), "records cannot be read from the stockroom")
+	root.Position = world.origin * Roblox.Vector3.new(5.5, 3, -10)
+	check(world:Near(p, "Records"), "inspection records are accessible on the counter")
 	local fakeRun = {
 		phase = "Tutorial",
 		stock = { Battery = 4 },
-		order = { Id = "1", Customer = "Mara", Step = "Waiting", Fault = "Battery" },
+		stations = {
+			Bench = { Id = "Bench", order = { Id = "1", Customer = "Mara", Step = "Waiting", Fault = "Battery" } },
+			Bench2 = { Id = "Bench2" },
+		},
 	}
 	world:Render(fakeRun)
 	check(
-		world.customer
+		world.repairLanes.Bench.customer
 			and tweens == 1
 			and world.prompts.Counter.Enabled
 			and world.actions.Counter == "TakeOrder",
@@ -995,18 +833,16 @@ do
 		"opening tweens door to its hinge pose and clears the entry"
 	)
 	check(
-		not world.benchLight.Enabled
-			and world.actions.Radio == "TuneRadio"
-			and world.actions.Records == "InspectRecords",
-		"world binds optional lamp, radio, and shift log"
+		not world.benchLight.Enabled and world.actions.Radio == "TuneRadio" and not world.actions.Records,
+		"optional light and radio remain; records only prompt during inspections"
 	)
-	fakeRun.order.Step, fakeRun.order.PausedAt = "Arriving", h.time
+	fakeRun.stations.Bench.order.Step, fakeRun.stations.Bench.order.PausedAt = "Arriving", h.time
 	world:Render(fakeRun)
-	check(not world.customer, "disturbance removes an approaching normal customer from the scene")
-	fakeRun.order.PausedAt = nil
+	check(not world.repairLanes.Bench.customer, "disturbance removes an approaching normal customer from the scene")
+	fakeRun.stations.Bench.order.PausedAt = nil
 	world:Render(fakeRun)
-	check(world.customer ~= nil, "suspended approach can be rebuilt after the disturbance")
-	fakeRun.order.Step = "Collect"
+	check(world.repairLanes.Bench.customer ~= nil, "suspended approach can be rebuilt after the disturbance")
+	fakeRun.stations.Bench.order.Step = "Collect"
 	world:Render(fakeRun)
 	check(
 		world.actions.Part_Battery == "Collect"
@@ -1023,7 +859,7 @@ do
 	fakeRun.event = { Kind = "Visitor" }
 	world:Render(fakeRun)
 	check(world.watcher and world.watcher.Name == "Visitor", "visitor manifests outside the shop")
-	fakeRun.phase, fakeRun.event, fakeRun.order = "Results", nil, nil
+	fakeRun.phase, fakeRun.event, fakeRun.stations.Bench.order = "Results", nil, nil
 	world:Render(fakeRun)
 	check(
 		not world.watcher and not world.prompts.Counter.Enabled and world.lamps[1].Enabled,
@@ -1035,21 +871,15 @@ do
 	for _ = 1, 40 do
 		world:Render(fakeRun)
 	end
-	check(
-		world.actions == actions,
-		"unchanged revisions reuse world bindings instead of rebuilding prompt actions"
-	)
+	check(world.actions == actions, "unchanged revisions reuse world bindings instead of rebuilding prompt actions")
 	for _ = 1, 20 do
 		fakeRun.revision += 1
 		world:Render(fakeRun)
 	end
-	check(
-		world.actions == actions,
-		"twenty puzzle/profile revisions cause zero unchanged-scene prompt rebuilds"
-	)
+	check(world.actions == actions, "twenty puzzle/profile revisions cause zero unchanged-scene prompt rebuilds")
 	local playerGui = h.instance("PlayerGui")
 	local used, lobbyCalls = nil, 0
-	local view = h:load("src/GClient/PrototypeView.luau").new(playerGui, {
+	local view = h:load("src/GClient/UI/PrototypeView.luau").new(playerGui, {
 		act = function(action)
 			used = action
 		end,
@@ -1155,8 +985,7 @@ do
 		"carried tool changes HUD to bench delivery"
 	)
 	state.CarriedPart = nil
-	state.Vote =
-		{ OrderId = "1", EndsAt = h.time + 10, Message = "Clue", Report = 0, Hide = 0, Investigate = 0 }
+	state.Vote = { OrderId = "1", EndsAt = h.time + 10, Message = "Clue", Report = 0, Hide = 0, Investigate = 0 }
 	view:SetState(state)
 	check(
 		view.modal.Visible and view.voteButtons.Report.Visible and not view.ack.Visible,
@@ -1179,6 +1008,25 @@ do
 	state.NightStartedAt, state.NightDuration, state.Phase = h.time - 60, 360, "Night"
 	view:SetState(state)
 	check(view.clock.Text == "NIGHT 01\n01:00 AM", "night clock derives from authoritative start time")
+	state.Outside, state.DoorOpen = { Since = h.time - 15, ThreatEndsAt = h.time + 7 }, false
+	view:SetState(state)
+	check(
+		view.warning.Visible
+			and string.find(view.warningText.Text, "GET INSIDE", 1, true)
+			and view:CurrentAction() == "ToggleDoor",
+		"outdoor pursuit exposes escape countdown and door action"
+	)
+	state.DoorOpen = true
+	view:SetState(state)
+	check(view:CurrentAction() == nil, "escape button cannot close an already open staff door")
+	state.Outside = nil
+	state.Injury, state.HP = { Damage = 25, Reason = "The signal struck you", ExpiresAt = h.time + 8 }, 75
+	view:SetState(state)
+	check(
+		view.warning.Visible and string.find(view.warningText.Text, "75 HP LEFT", 1, true),
+		"injury aftermath makes the health consequence readable"
+	)
+	state.Injury = nil
 	h.time += 30
 	view:Render()
 	check(view.clock.Text == "NIGHT 01\n01:30 AM", "clock advances without repeated network snapshots")
@@ -1199,8 +1047,7 @@ do
 	state.Ending = { Title = "MISSING EMPLOYEE", Summary = "Your timecard is still in the rack." }
 	view:SetState(state)
 	check(
-		view.modalTitle.Text == state.Ending.Title
-			and string.find(view.modalText.Text, state.Ending.Summary, 1, true),
+		view.modalTitle.Text == state.Ending.Title and string.find(view.modalText.Text, state.Ending.Summary, 1, true),
 		"results combine personal epilogue and shift statistics"
 	)
 	view.lobby.Activated:Fire()
@@ -1211,6 +1058,7 @@ do
 	check(not playerGui:FindFirstChild("DPU_PrototypeHUD"), "prototype UI cleanup removes only owned HUD")
 	-- Delayed tween completions exercise ownership, cancellation and restore paths.
 	local camera = h.instance("Camera")
+	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
 	camera.CFrame, camera.Focus = Roblox.CFrame.new(0, 5, 2), Roblox.CFrame.new()
 	camera.CameraType, camera.CameraSubject, camera.FieldOfView = "CameraType.Custom", humanoid, 73
 	camera.Parent, workspace.CurrentCamera = workspace, camera
@@ -1225,7 +1073,7 @@ do
 	local renderSignal, inputSignal = signal(), signal()
 	local reduced, menu = false, false
 	local tweenList = {}
-	local presentation = h:load("src/GClient/RepairPresentation.luau").new({
+	local presentation = h:load("src/GClient/Repair/RepairPresentation.luau").new({
 		stand = function()
 			humanoid.Sit = false
 		end,
@@ -1275,10 +1123,7 @@ do
 	repair.Work.UserId = 999
 	repair.Seated = false
 	presentation:Update(repair, false)
-	check(
-		not presentation:OwnsCamera() and not presentation.card.Visible,
-		"teammate work never steals local camera"
-	)
+	check(not presentation:OwnsCamera() and not presentation.card.Visible, "teammate work never steals local camera")
 	repair.Work.UserId = p.UserId
 	repair.Seated = true
 	presentation:Update(repair, false)
@@ -1286,6 +1131,15 @@ do
 		presentation:OwnsCamera() and camera.CameraType == "CameraType.Scriptable",
 		"local repair eases into scriptable bench camera"
 	)
+	check(
+		camera.CFrame.Position.Y > camera.Focus.Position.Y + 6 and math.abs(camera.CFrame.LookVector.Y) > 0.98,
+		"repair camera is above the phone with an almost vertical viewing axis"
+	)
+	check(root.LocalTransparencyModifier == 1, "repair close-up hides only the local character")
+	local lateHat = h.instance("Part")
+	lateHat.Name, lateHat.LocalTransparencyModifier, lateHat.Parent = "LateAccessory", 0.35, character
+	character.DescendantAdded:Fire(lateHat)
+	check(lateHat.LocalTransparencyModifier == 1, "accessories arriving during repair are hidden locally")
 	check(
 		presentation.highlight.Adornee == world.repairPhone.Battery and presentation.card.Visible,
 		"repair highlights the requested component with one reusable progress card"
@@ -1295,6 +1149,15 @@ do
 		presentation:Update(repair, false)
 	end
 	check(#tweenList == count, "repeated repair snapshots never restart camera or progress tweens")
+	camera.ViewportSize = Roblox.Vector2.new(375, 812)
+	renderSignal:Fire()
+	check(
+		camera.CFrame.Position.Y < world.folder.Roof.CFrame.Position.Y - 0.5 and camera.FieldOfView > 45,
+		"portrait reframing keeps trays visible without moving the camera through the shop roof"
+	)
+	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
+	renderSignal:Fire()
+	check(camera.FieldOfView == 45, "landscape resize returns to the close repair lens")
 	local fittingWork = repair.Work
 	repair.Work, repair.Order.Step, repair.Order.Contacts, repair.Order.RequiredContacts = nil, "Secure", 1, 3
 	presentation:Update(repair, false)
@@ -1306,6 +1169,10 @@ do
 	repair.Work, repair.Order.Step = fittingWork, "Repair"
 	inputSignal:Fire({ KeyCode = "KeyCode.Q" }, false)
 	check(
+		root.LocalTransparencyModifier == 0 and lateHat.LocalTransparencyModifier == 0.35,
+		"standing restores the captured local transparency of body and accessories"
+	)
+	check(
 		not presentation:OwnsCamera()
 			and camera.CameraType == "CameraType.Custom"
 			and camera.FieldOfView == 73
@@ -1313,10 +1180,7 @@ do
 		"look-around input restores exact camera and FOV without stopping work"
 	)
 	presentation:Update(repair, false)
-	check(
-		not presentation:OwnsCamera() and presentation.card.Visible,
-		"dismissed work never traps the camera again"
-	)
+	check(not presentation:OwnsCamera() and presentation.card.Visible, "dismissed work never traps the camera again")
 	local function newWork()
 		h.time += 1
 		repair.Seated, repair.SeatVisit, humanoid.Sit = true, repair.SeatVisit + 1, true
@@ -1370,9 +1234,7 @@ do
 	check(presentation.saved.Returning, "standing eases back before handing control to Roblox")
 	returning.Completed:Fire()
 	check(
-		not presentation:OwnsCamera()
-			and camera.CameraType == "CameraType.Custom"
-			and camera.FieldOfView == 73,
+		not presentation:OwnsCamera() and camera.CameraType == "CameraType.Custom" and camera.FieldOfView == 73,
 		"completed return tween restores exact normal camera settings"
 	)
 	repair.Work = savedWork
@@ -1383,6 +1245,34 @@ do
 		"stale completion cannot restore a newer close-up"
 	)
 	presentation:Destroy()
+	local testPresentation = h:load("src/GClient/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
+	local testState = {
+		RunId = "testing",
+		Phase = "Night",
+		Alive = true,
+		Seated = true,
+		SeatStation = "Bench",
+		SeatVisit = 1,
+		Target = "Bench",
+		Order = { Id = "phone", Step = "Test" },
+	}
+	root.Position = world.stations.Bench.Position + Roblox.Vector3.new(0, 0, 5)
+	humanoid.Sit, humanoid.SeatPart = true, world.workshop.seat
+	for _, marker in ipairs(world.stations.Bench:GetChildren()) do
+		if marker:IsA("Attachment") then
+			marker.WorldCFrame = world.stations.Bench.CFrame * marker.CFrame
+		end
+	end
+	testPresentation:Update(testState, false)
+	check(
+		testPresentation:OwnsCamera()
+			and testPresentation.highlight.Adornee == world.repairPhone.Screen
+			and testPresentation.highlight.DepthMode == "HighlightDepthMode.AlwaysOnTop",
+		"final testing keeps the repair camera and phone highlight"
+	)
+	testPresentation:Destroy()
+	humanoid.SeatPart = world.workshop.seat
+	root.Position = world.stations.Bench.Position + Roblox.Vector3.new(0, 0, 5)
 	check(
 		camera.FieldOfView == 73 and not presentation.highlight.Parent and not presentation.card.Parent,
 		"cleanup restores camera and destroys only owned visuals"
@@ -1395,7 +1285,7 @@ do
 	local battery, tray = world.repairPhone.Battery, world.replacement
 	battery.LocalTransparencyModifier, tray.LocalTransparencyModifier = 0.2, 0.3
 	battery.Transparency, tray.Position = 0, tray.CFrame.Position
-	local assembly = h:load("src/GClient/RepairAssembly.luau").new({
+	local assembly = h:load("src/GClient/Repair/RepairAssembly.luau").new({
 		workspace = workspace,
 		tweens = presentation.d.tweens,
 		reduced = function()
@@ -1422,9 +1312,7 @@ do
 	h.time += 1.4
 	assembly:Update(repair)
 	check(
-		not moving.Parent
-			and battery.LocalTransparencyModifier == 0.2
-			and tray.LocalTransparencyModifier == 0.3,
+		not moving.Parent and battery.LocalTransparencyModifier == 0.2 and tray.LocalTransparencyModifier == 0.3,
 		"finished assembly restores captured local visibility"
 	)
 	repair.Work.StartedAt, repair.Work.EndsAt = h.time - 3, h.time + 1
@@ -1481,7 +1369,7 @@ do
 	soundTemplate.Play = function(self)
 		self.Played = true
 	end
-	local scares = h:load("src/GClient/ScarePresentation.luau").new({
+	local scares = h:load("src/GClient/Effects/ScarePresentation.luau").new({
 		workspace = workspace,
 		storage = services.ReplicatedStorage,
 		tweens = presentation.d.tweens,
@@ -1498,19 +1386,19 @@ do
 	local scareState = { RunId = "night", Scare = { Id = "one", Kind = "Signal", At = h.time } }
 	scares:Update(scareState)
 	check(
-		scares.frame.Visible
-			and scares.viewport.Visible
-			and scares.sound.Played
-			and scares.sound.Volume == 0.3,
+		scares.frame.Visible and scares.viewport.Visible and scares.sound.Played and scares.sound.Volume == 0.3,
 		"fresh scare uses pooled face and capped master-scaled optional sound"
 	)
-	check(
-		camera.CFrame == original and camera.CameraType == "CameraType.Custom",
-		"scare never owns the world camera"
-	)
+	check(camera.CFrame == original and camera.CameraType == "CameraType.Custom", "scare never owns the world camera")
 	local scareTween = scares.tween
 	scares:Update(scareState)
 	check(scares.tween == scareTween, "repeated snapshots cannot replay a scare")
+	scareState.Scare = { Id = "injury", Kind = "Signal", At = h.time, Damage = 25, Fatal = false }
+	scares:Update(scareState)
+	check(string.find(scares.caption.Text, "25 HP", 1, true), "injuring scare displays its server-issued consequence")
+	scareState.Scare = { Id = "fatal", Kind = "Visitor", At = h.time, Damage = 100, Fatal = true }
+	scares:Update(scareState)
+	check(scares.caption.Text == "IT FOUND YOU.", "fatal attack has a distinct caption before death")
 	h.time += 1
 	scares:Update(scareState)
 	check(not scares.frame.Visible and not scares.sound, "scare and audio expire on bounded update")
@@ -1538,10 +1426,7 @@ do
 	h.time += 0.3
 	scares:Update(scareState)
 	check(
-		scares.sound == scares.fallback
-			and scares.sound.Played
-			and scares.lunge
-			and scares.camera.FieldOfView == 43,
+		scares.sound == scares.fallback and scares.sound.Played and scares.lunge and scares.camera.FieldOfView == 43,
 		"fallback impact and viewport lunge work without uploaded scare assets"
 	)
 	local ownedImpact = scares.fallback
@@ -1551,8 +1436,7 @@ do
 		not scares.frame.Visible and not ownedImpact.Played and ownedImpact.Parent,
 		"impact sound is stopped and pooled after the hit"
 	)
-	scareState.Event =
-		{ Id = "knock", Kind = "Knocks", Minor = true, StartedAt = h.time, EndsAt = h.time + 6 }
+	scareState.Event = { Id = "knock", Kind = "Knocks", Minor = true, StartedAt = h.time, EndsAt = h.time + 6 }
 	scares:Update(scareState)
 	check(
 		scares.ambient.Played and scares.ambient.Parent == world.stations.StaffDoor,
@@ -1583,7 +1467,7 @@ do
 	check(counterfeit.Parent == backpack and not tester.Parent, "kit cleanup preserves unrelated tools")
 	counterfeit:Destroy()
 	local sent, args
-	local stationUi = h:load("src/GClient/StationInteraction.luau").new({
+	local stationUi = h:load("src/GClient/Interactions/StationInteraction.luau").new({
 		workspace = workspace,
 		player = p,
 		tweens = presentation.d.tweens,
@@ -1644,15 +1528,18 @@ do
 	check(not stationUi.panel.Visible, "dismissed clock visit never recaptures after closing menu")
 	stationUi:Destroy()
 	reduced = false
-	check(
-		not stationUi.panel.Parent and not stationUi.frame,
-		"clock teardown disconnects input and camera callbacks"
-	)
-	local puzzleUi = h:load("src/GClient/PuzzleView.luau").new(playerGui, function(action, payload)
+	check(not stationUi.panel.Parent and not stationUi.frame, "clock teardown disconnects input and camera callbacks")
+	local taskInput = { InputChanged = signal(), InputEnded = signal() }
+	local puzzleUi = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
 		sent, args = action, payload
-	end)
+	end, {
+		input = taskInput,
+		reduced = function()
+			return reduced
+		end,
+	})
 	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
-	local puzzleRules = h:load("src/GServer/WorkPuzzles.luau")
+	local puzzleRules = h:load("src/GServer/Repair/WorkPuzzles.luau")
 	local working = {
 		Alive = true,
 		Seated = true,
@@ -1665,22 +1552,453 @@ do
 	}
 	puzzleUi:Update(working, false, false)
 	check(
-		puzzleUi.panel.Visible and string.find(puzzleUi.buttons[1].Text, "MATCH"),
-		"speaker puzzle renders terminal targets and interactive wire values"
+		puzzleUi.panel.Visible and string.find(puzzleUi.tasks.buttons[1].Text, "WIRE"),
+		"speaker puzzle renders distinct wire ends and sockets"
 	)
-	puzzleUi.buttons[1].Activated:Fire()
+	puzzleUi.tasks.buttons[1].Activated:Fire()
+	puzzleUi.tasks.buttons[4].Activated:Fire()
 	check(
-		sent == "PuzzleInput" and args.Move == 1 and args.PuzzleRevision == 0 and args.WorkId == "work1",
+		sent == "PuzzleInput" and args.Move == 11 and args.PuzzleRevision == 0 and args.WorkId == "work1",
 		"puzzle controls submit task-scoped intent"
 	)
 	puzzleUi:Update(working, true, false)
 	sent = nil
-	puzzleUi.buttons[1].Activated:Fire()
+	puzzleUi.tasks.buttons[1].Activated:Fire()
+	puzzleUi.tasks.buttons[4].Activated:Fire()
 	check(sent == nil, "busy puzzle cannot queue overlapping inputs")
+	puzzleUi:Update(working, false, false)
+	local taskUi = puzzleUi.tasks
+	taskUi.root.AbsolutePosition, taskUi.root.AbsoluteSize = Roblox.Vector2.new(100, 100), Roblox.Vector2.new(300, 180)
+	for i, button in ipairs(taskUi.buttons) do
+		button.AbsolutePosition = Roblox.Vector2.new(i <= 3 and 100 or 310, 100 + (i - 1) % 3 * 60)
+		button.AbsoluteSize = Roblox.Vector2.new(90, 54)
+	end
+	local finger = { UserInputType = h.env.Enum.UserInputType.Touch, Position = Roblox.Vector3.new(145, 163, 0) }
+	taskUi.buttons[1].InputBegan:Fire(finger)
+	finger.Position = Roblox.Vector3.new(355, 163, 0)
+	taskInput.InputChanged:Fire(finger)
+	check(
+		taskUi.ghost.Visible and taskUi.ghost.Position.X.Offset == 255,
+		"touch drag previews movement locally with inset-independent coordinates"
+	)
+	taskInput.InputEnded:Fire({ UserInputType = h.env.Enum.UserInputType.Touch, Position = finger.Position })
+	check(sent == nil and taskUi.drag ~= nil, "unrelated second finger cannot complete the drag")
+	taskInput.InputEnded:Fire(finger)
+	check(
+		sent == "PuzzleInput" and args.Move == 11 and not taskUi.ghost.Visible,
+		"release submits one source-to-socket move"
+	)
+	sent = nil
+	finger.Position = Roblox.Vector3.new(145, 163, 0)
+	taskUi.buttons[1].InputBegan:Fire(finger)
+	working.Work.Id = "work2"
+	puzzleUi:Update(working, false, false)
+	taskInput.InputEnded:Fire(finger)
+	check(sent == nil and not taskUi.drag, "new task identity cancels an old held drag")
 	working.Event = { Kind = "Visitor" }
 	puzzleUi:Update(working, false, false)
 	check(not puzzleUi.panel.Visible, "hazard hides repair controls for escape")
+	working.Event = nil
+	working.Work.Id = "memory"
+	working.Work.Puzzle = puzzleRules.Snapshot(puzzleRules.New("Test", "Battery", 4, 4, h.time))
+	puzzleUi:Update(working, false, false)
+	check(
+		not taskUi.buttons[1].Active and not string.find(puzzleUi.hint.Text, "LABEL:", 1, true),
+		"memory demonstration disables answers and does not print a permanent solution"
+	)
+	reduced = true
+	puzzleUi:Update(working, false, false)
+	for _, button in ipairs(taskUi.buttons) do
+		check(button.BackgroundColor3 == Roblox.Color3.new(0, 0, 0), "reduced flashes uses text-only memory cues")
+	end
+	h.time = working.Work.Puzzle.RevealUntil + 1
+	puzzleUi:Update(working, false, false)
+	check(
+		taskUi.buttons[1].Active and taskUi.check.Text == "REPLAY SIGNAL",
+		"memory controls unlock after server demonstration time"
+	)
+	working.Work.Id = "dial"
+	working.Work.Puzzle = puzzleRules.Snapshot(puzzleRules.New("Install", "Battery", 2, 4, h.time))
+	puzzleUi:Update(working, false, false)
+	check(taskUi.dials[1].Visible and not taskUi.buttons[4].Visible, "data link uses three physical dial faces")
+	working.Work.Id = "circuit"
+	working.Work.Puzzle = puzzleRules.Snapshot(puzzleRules.New("Repair", "Keypad", 2, 4, h.time))
+	puzzleUi:Update(working, false, false)
+	check(
+		not taskUi.dials[1].Visible and taskUi.buttons[4].Visible and taskUi.buttons[1].Text == "IN",
+		"task changes reset pooled geometry and reveal circuit controls"
+	)
+	local benchRules = h:load("src/GServer/Repair/BenchTasks.luau")
+	local function showBench(kind, seed)
+		working.Work.Id = "extra_" .. kind
+		working.Work.Puzzle = puzzleRules.Snapshot(benchRules.New(kind, seed or 3, h.time))
+		taskUi.ignoreClickUntil = nil
+		sent = nil
+		puzzleUi:Update(working, false, false)
+	end
+	for _, kind in ipairs({
+		"Clean",
+		"Debris",
+		"Broken",
+		"Screen",
+		"SIM",
+		"Fuse",
+		"Charger",
+		"Sort",
+		"Assembly",
+		"Screws",
+		"Buttons",
+		"PhoneNumber",
+		"Waves",
+		"Meter",
+		"Stamp",
+		"Speaker",
+	}) do
+		showBench(kind)
+		check(taskUi.root.Visible and puzzleUi.panel.Visible, "new bench task renders: " .. kind)
+		check(not puzzleUi.buttons[1].Visible, "only one task surface is visible: " .. kind)
+	end
+	showBench("PhoneNumber")
+	taskUi.buttons[10].Activated:Fire()
+	check(
+		args.Move == 10 and taskUi.buttons[10].Text == "0" and taskUi.buttons[11].Visible,
+		"phone keypad includes zero and clear"
+	)
+	showBench("SIM", 1)
+	taskUi.check.Activated:Fire()
+	check(args.Move == 7, "SIM rotation uses discrete server control")
+	taskUi.buttons[1].Activated:Fire()
+	taskUi.buttons[4].Activated:Fire()
+	check(args.Move == 11, "SIM tap-select then slot matches drag intent")
+	showBench("Screen")
+	taskUi.buttons[1].InputBegan:Fire(finger)
+	working.Work.Puzzle.Phase, working.Work.Puzzle.Revision = 2, 1
+	puzzleUi:Update(working, false, false)
+	taskInput.InputEnded:Fire(finger)
+	check(not taskUi.drag and sent == nil, "screen stage change cancels old drag")
+	working.Work.Puzzle.Phase, working.Work.Puzzle.Revision = 3, 2
+	puzzleUi:Update(working, false, false)
+	check(taskUi.buttons[4].Visible and taskUi.buttons[4].Text == "CLIP 4", "screen finish exposes all four clips")
+	showBench("Waves")
+	check(
+		taskUi.extra.graph.Visible and taskUi.extra.segments[1][1].Visible and taskUi.extra.segments[2][1].Visible,
+		"wave task draws reference and adjustable traces"
+	)
+	showBench("Meter")
+	local firstMeterPosition = taskUi.extra.needle.Position
+	h.time += 0.5
+	puzzleUi:Update(working, false, false)
+	check(taskUi.extra.needle.Position ~= firstMeterPosition, "meter predicts drift without per-frame server input")
+	showBench("Speaker")
+	reduced = false
+	h.time = working.Work.Puzzle.RevealAt + 0.1
+	puzzleUi:Update(working, false, false)
+	check(
+		taskUi.extra.tone.Played and not taskUi.buttons[1].Active,
+		"speaker demonstration plays tone and locks answers"
+	)
+	check(
+		not string.find(puzzleUi.hint.Text, "LABEL:", 1, true),
+		"speaker sequence is not printed as a permanent answer"
+	)
+	reduced = true
+	puzzleUi:Update(working, false, false)
+	check(not taskUi.extra.tone.Played, "reduced effects provides silent numbered speaker cues")
+	working.Event = { Kind = "Blackout" }
+	puzzleUi:Update(working, false, false)
+	check(not taskUi.root.Visible and not taskUi.extra.tone.Played, "interruption stops sound and hides controls")
+	working.Event = nil
+	check(
+		world.direct.Part_Battery:GetAttribute("DPU_Direct") == "Part_Battery"
+			and world.prompts.Bench.HoldDuration == 0.4
+			and world.prompts.Fuse.HoldDuration == 1.2
+			and world.direct.Timeclock:GetAttribute("DPU_Direct") == "Timeclock",
+		"small objects use direct interactions; bench and fuse retain deliberate prompts"
+	)
 	puzzleUi:Destroy()
+	sent = nil
+	taskInput.InputEnded:Fire(finger)
+	check(sent == nil and not taskUi.root.Parent, "destroy disconnects task input and removes owned UI")
+	local subtitleRender = signal()
+	local subtitle = h:load("src/GClient/Dialogue/SubtitleView.luau").new(playerGui, {
+		clock = function()
+			return h.time
+		end,
+		workspace = workspace,
+		render = { RenderStepped = subtitleRender },
+		reduced = function()
+			return reduced
+		end,
+	})
+	reduced = false
+	local speech = {
+		RunId = "speech",
+		Alive = true,
+		Phase = "Night",
+		Dialogue = {
+			Id = "line1",
+			Speaker = "Mara",
+			Text = "Please fix my phone. I need to make a call.",
+			ExpiresAt = h.time + 10,
+		},
+	}
+	subtitle:Update(speech, false)
+	check(
+		subtitle.panel.Visible and subtitle.line.MaxVisibleGraphemes == 0 and not subtitle.line.RichText,
+		"subtitles start safely hidden for typing"
+	)
+	h.time += 0.5
+	subtitleRender:Fire()
+	check(subtitle.line.MaxVisibleGraphemes == 16, "subtitles reveal at a readable local rate")
+	subtitle:Update(speech, false)
+	check(subtitle.line.MaxVisibleGraphemes == 16, "repeated snapshots do not restart speech")
+	reduced = true
+	subtitle:Update(speech, false)
+	check(subtitle.line.MaxVisibleGraphemes == -1, "reduced motion displays the full line immediately")
+	subtitle:Update(speech, true)
+	check(not subtitle.panel.Visible and not subtitle.frame, "menus hide subtitles and disconnect their local callback")
+	subtitle:Update(speech, false)
+	check(subtitle.panel.Visible, "unexpired dialogue resumes after a menu")
+	h.time += 11
+	subtitleRender:Fire()
+	check(not subtitle.panel.Visible and not subtitle.frame, "expired dialogue removes its callback")
+	speech.RunId, speech.Dialogue = "next-night", nil
+	subtitle:Update(speech, false)
+	check(not subtitle.panel.Visible and not subtitle.current, "new nights clear old speech")
+	reduced = false
+	speech.Dialogue = {
+		Id = "long-line",
+		Speaker = "Radio",
+		Text = "Keep the service door locked after midnight. A representative from the department will arrive before dawn. Please keep your records ready.",
+		ExpiresAt = h.time + 20,
+	}
+	speech.Work = { Puzzle = {} }
+	camera.ViewportSize = Roblox.Vector2.new(667, 375)
+	subtitle:Update(speech, false)
+	local firstPage = subtitle.line.Text
+	check(
+		#subtitle.pages > 1 and math.abs(subtitle.panel.Size.X.Scale - 0.34) < 0.0001,
+		"long dialogue paginates beside tasks on landscape phones"
+	)
+	h.time += 5
+	subtitleRender:Fire()
+	check(subtitle.line.Text ~= firstPage, "long speech advances readable pages without a gameplay click")
+	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
+	subtitle:Destroy()
+	check(not subtitle.panel.Parent, "subtitle cleanup removes its owned UI")
+	-- Physical inputs use the same server tasks; rendered travel carries no authority.
+	local physicalInput = {
+		InputBegan = signal(),
+		InputChanged = signal(),
+		InputEnded = signal(),
+		WindowFocusReleased = signal(),
+	}
+	local lastInput = h.env.Enum.UserInputType.MouseMovement
+	physicalInput.GetLastInputType = function()
+		return lastInput
+	end
+	local cameraReady, physicalCalls = true, 0
+	local physicalState = { RunId = "physical", Phase = "Night", Alive = true, Seated = true, SeatStation = "Bench" }
+	local physicalPuzzle, physicalMove, physicalPayload
+	local physical = h:load("src/GClient/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
+		check(action == "PuzzleInput", "physical tasks use the existing scoped action")
+		physicalCalls += 1
+		physicalMove, physicalPayload = payload.Move, payload
+	end, {
+		workspace = workspace,
+		player = p,
+		input = physicalInput,
+		render = { RenderStepped = renderSignal },
+		tweens = presentation.d.tweens,
+		reduced = function()
+			return reduced
+		end,
+		menuOpen = function()
+			return menu
+		end,
+		cameraReady = function()
+			return cameraReady
+		end,
+	})
+	humanoid.Sit, humanoid.SeatPart = true, world.workshop.seat
+	local benchTasks = h:load("src/GServer/Repair/BenchTasks.luau")
+	local function startPhysical(puzzle)
+		physicalPuzzle = puzzle
+		physicalState.Work = {
+			Id = "physical-" .. tostring(physicalCalls) .. puzzle.Kind,
+			OrderId = "phone-3d",
+			Station = "Bench",
+			UserId = p.UserId,
+			Puzzle = puzzleRules.Snapshot(puzzle),
+		}
+		check(physical:Update(physicalState, false, false), "supported physical task takes over the button panel")
+	end
+	camera.ScreenPointToRay = function(_, x, y)
+		return {
+			Origin = physical.frameOfPhone:PointToWorldSpace(Roblox.Vector3.new(x, 5, y)),
+			Direction = physical.frameOfPhone:VectorToWorldSpace(Roblox.Vector3.new(0, -1, 0)),
+		}
+	end
+	local function fingerAt(node)
+		return {
+			UserInputType = h.env.Enum.UserInputType.Touch,
+			Position = Roblox.Vector3.new(node.Spec.Position.X, node.Spec.Position.Z, 0),
+		}
+	end
+	local function gesture(source, destination)
+		local finger = fingerAt(source)
+		physicalInput.InputBegan:Fire(finger, false)
+		local before = physicalCalls
+		finger.Position = Roblox.Vector3.new(destination.X, destination.Z, 0)
+		physicalInput.InputChanged:Fire(finger)
+		renderSignal:Fire()
+		check(physicalCalls == before, "3D preview never sends pointer movement over the network")
+		physicalInput.InputEnded:Fire(finger)
+	end
+	local function acceptPhysical()
+		local accepted = puzzleRules.Input(physicalPuzzle, physicalMove, physicalPayload.PuzzleRevision, h.time)
+		check(
+			accepted and physicalPayload.WorkId == physicalState.Work.Id and physicalPayload.OrderId == "phone-3d",
+			"physical gesture is validated by current server work and revision"
+		)
+		physicalState.Work.Puzzle = puzzleRules.Snapshot(physicalPuzzle)
+		physical:Update(physicalState, false, false)
+	end
+	startPhysical(puzzleRules.New("Repair", "Battery", 2))
+	local physicalFolder = physical.folder
+	local loose = physical.nodes.item1
+	local finger = fingerAt(loose)
+	physicalInput.InputBegan:Fire(finger, false)
+	finger.Position = Roblox.Vector3.new(-0.8, 0.3, 0)
+	physicalInput.InputChanged:Fire(finger)
+	renderSignal:Fire()
+	check(
+		(loose.Part.CFrame.Position - physical.frameOfPhone:PointToWorldSpace(loose.Spec.Position)).Magnitude > 0.4,
+		"drag moves a real local 3D part above the phone"
+	)
+	physicalInput.InputEnded:Fire({
+		UserInputType = h.env.Enum.UserInputType.Touch,
+		Position = finger.Position,
+	})
+	check(physical.drag ~= nil and physicalCalls == 0, "second finger cannot release someone else's 3D drag")
+	physicalInput.WindowFocusReleased:Fire()
+	check(not physical.drag and physicalCalls == 0, "losing window focus cancels physical drag without a move")
+	local bay = table.find(physicalPuzzle.Slots, 1)
+	gesture(loose, physical.nodes["slot" .. bay].Spec.Position)
+	check(physicalMove == 10 + bay and physicalCalls == 1, "battery release submits one matching bay move")
+	gesture(loose, physical.nodes["slot" .. bay].Spec.Position)
+	check(physicalCalls == 1, "pending physical move cannot send duplicate gestures")
+	acceptPhysical()
+	check(
+		physicalPuzzle.Placed[1] and physical.folder == physicalFolder and physical.nodes.item1 == loose,
+		"accepted placement reuses the scene and snaps the existing part into its bay"
+	)
+	local beforeStale = physicalCalls
+	physicalInput.InputBegan:Fire(fingerAt(physical.nodes.item2), false)
+	physicalState.Work.Id = "replacement-work"
+	physical:Update(physicalState, false, false)
+	physicalInput.InputEnded:Fire(finger)
+	check(
+		not physical.drag and physicalCalls == beforeStale and not physicalFolder.Parent,
+		"work replacement destroys old local pieces and cancels held gestures"
+	)
+	startPhysical(benchTasks.New("Screws", 3, h.time))
+	local screw = physical.nodes.screw1
+	gesture(screw, screw.Spec.Position)
+	check(not physical.submitted, "clicking a physical screw without turning cannot tighten it")
+	gesture(screw, screw.Spec.Position + Roblox.Vector3.new(0.35, 0, 0))
+	acceptPhysical()
+	check(physicalPuzzle.Turns[1] == 1, "sideways screw gesture advances one server notch")
+	startPhysical(benchTasks.New("Clean", 3, h.time))
+	gesture(physical.nodes.dirt1, physical.nodes.dirt1.Spec.Position + Roblox.Vector3.new(0.5, 0, 0))
+	acceptPhysical()
+	check(physicalPuzzle.Dirt[1] == 1, "scrubbing changes a real patch only after server validation")
+	startPhysical(benchTasks.New("Screen", 3, h.time))
+	gesture(physical.nodes.screen, physical.nodes.socket.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.Phase == 2 and physical.nodes.screen.Spec.Position.X < -1,
+		"removing a display reveals a replacement beside the phone"
+	)
+	gesture(physical.nodes.screen, physical.nodes.socket.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.Phase == 3 and physical.nodes.clip1 and not physical.nodes.screen,
+		"fitting the display changes to physical clip targets"
+	)
+	startPhysical(benchTasks.New("Debris", 3, h.time))
+	gesture(physical.nodes.item1, physical.nodes.waste.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.Removed[1] and physical.nodes.item1.Part.Transparency == 1,
+		"waste tray removes accepted debris"
+	)
+	startPhysical(puzzleRules.New("Repair", "Speaker", 2))
+	check(physical.nodes.item1.Wire ~= nil, "wire task has a real cord attached to its draggable end")
+	local wireBay = table.find(physicalPuzzle.Slots, 1)
+	gesture(physical.nodes.item1, physical.nodes["slot" .. wireBay].Spec.Position)
+	acceptPhysical()
+	check(physicalPuzzle.Placed[1], "physical wire connects through server matching rules")
+	startPhysical(benchTasks.New("Assembly", 3, h.time))
+	local boardBay = table.find(physicalPuzzle.Slots, 1)
+	gesture(physical.nodes.item1, physical.nodes["slot" .. boardBay].Spec.Position)
+	acceptPhysical()
+	check(physicalPuzzle.Progress == 1, "3D ordered assembly places the circuit board first")
+	startPhysical(puzzleRules.New("Diagnose", "Speaker", 3))
+	gesture(physical.nodes.probe1, physical.nodes.probe1.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.Tested[1] and physical.nodes.probe1.Label.Text == physicalPuzzle.Readings[1],
+		"physical probe displays only a reading the server has revealed"
+	)
+	physical.mode.Activated:Fire()
+	check(not physical:Update(physicalState, false, false) and not physical.folder, "button fallback clears 3D pieces")
+	physical.mode.Activated:Fire()
+	physical:Update(physicalState, false, false)
+	lastInput = h.env.Enum.UserInputType.Gamepad1
+	check(
+		not physical:Update(physicalState, false, false),
+		"controller input retains the existing selectable button tasks"
+	)
+	lastInput = h.env.Enum.UserInputType.MouseMovement
+	physical:Update(physicalState, false, false)
+	local finalFolder = physical.folder
+	cameraReady = false
+	renderSignal:Fire()
+	check(
+		not physical.folder and not finalFolder.Parent and not physical.render,
+		"camera release immediately removes 3D props and its active-only render callback"
+	)
+	check(
+		world.repairPhone.Battery.LocalTransparencyModifier == 0.2,
+		"physical cleanup restores original phone transparency"
+	)
+	physical:Destroy()
+	check(not physical.hint.Parent and not physical.mode.Parent, "physical task teardown removes owned UI")
+	cameraReady = true
+	local mixed = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
+	mixed:Update(physicalState, false, false)
+	check(
+		mixed.physical.folder and not mixed.panel.Visible,
+		"physical tasks replace rather than overlay the button panel"
+	)
+	mixed.physical.mode.Activated:Fire()
+	mixed:Update(physicalState, false, false)
+	check(mixed.panel.Visible and not mixed.physical.folder, "fallback exposes the same puzzle's existing controls")
+	physicalState.SeatStation = "OtherSeat"
+	mixed:Update(physicalState, false, false)
+	check(
+		not mixed.panel.Visible and not mixed.physical.folder,
+		"repair controls cannot appear at the wrong seated station"
+	)
+	physicalState.SeatStation = "Bench"
+	physicalState.Work.UserId = 999
+	mixed:Update(physicalState, false, false)
+	check(
+		not mixed.panel.Visible and not mixed.physical.folder,
+		"neither input surface accepts another operator's work"
+	)
+	mixed:Destroy()
 	world:Shutdown()
 	check(
 		not workspace:FindFirstChild("DPU_Prototype") and lighting.ClockTime == 12,
@@ -1693,11 +2011,10 @@ do
 	local authored = h.instance("Folder")
 	authored.Name, authored.Parent = "DontPickUpTemplates", services.ReplicatedStorage
 	local authoredPhone = h.instance("Model")
-	authoredPhone.Name, authoredPhone.WorldPivot, authoredPhone.Parent =
-		"RepairPhone", Roblox.CFrame.new(), authored
+	authoredPhone.Name, authoredPhone.WorldPivot, authoredPhone.Parent = "RepairPhone", Roblox.CFrame.new(), authored
 	local body = h.instance("Part")
 	body.Name, body.CFrame, body.Parent = "Body", Roblox.CFrame.new(), authoredPhone
-	local placed, release = h:load("src/GServer/RepairTemplates.luau")
+	local placed, release = h:load("src/GServer/Repair/RepairTemplates.luau")
 		.Build(services.ReplicatedStorage, workspace, Roblox.CFrame.new(4, 5, 6))
 	release()
 	check(
@@ -1731,7 +2048,7 @@ do
 	check(not f:act("TuneRadio", b), "off-duty staff cannot use work activities")
 	f.near[a] = "Radio"
 	check(
-		f:act("TuneRadio", a) and string.find(f.run:Snapshot(a).Notice, "CITY RADIO"),
+		f:act("TuneRadio", a) and string.find(f.run:Snapshot(a).Dialogue.Text, "CITY RADIO"),
 		"radio plays a readable bulletin before any customer"
 	)
 	check(not f.run:Snapshot(b).Scare and not f.run:Snapshot(a).Scare, "training remains free of scares")
@@ -1744,7 +2061,7 @@ do
 		"log exposes current shift facts"
 	)
 	check(
-		f.run.repaired == 0 and f.run.revenue == 0 and not f.run.order,
+		f.run.repaired == 0 and f.run.revenue == 0 and not f.run.stations.Bench.order,
 		"ambient interactions never pay or start a customer"
 	)
 end
@@ -1754,20 +2071,17 @@ do
 	f:start()
 	f:repair()
 	f.c.Events = {}
-	f.run.nextOrder = f.h.time + 100
+	f.run.stations.Bench.nextOrder = f.h.time + 100
 	f.run.stock.Speaker = 1
 	f:advance(0.6)
 	check(
-		f:act("Restock") and f.run.work.Fault == "Speaker",
+		f:act("Restock") and f.run.stations.Bench.work.Fault == "Speaker",
 		"between-customer restock chooses the lowest shelf"
 	)
 	f:advance(f.c.WorkSeconds)
 	check(f.run.stock.Speaker == 3 and f.run.repaired == 1, "restock fills supplies without reward farming")
 	f.run.event = { Id = "test", Kind = "Blackout", EndsAt = f.h.time + 30 }
-	check(
-		f:act("InspectRecords") and f:act("TuneRadio"),
-		"optional observation remains available during a disturbance"
-	)
+	check(f:act("InspectRecords") and f:act("TuneRadio"), "optional observation remains available during a disturbance")
 	for _ = 1, 2 do
 		f:advance(3)
 		f:act("TuneRadio")
@@ -1797,7 +2111,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local endings = h:load("src/GServer/EndingRules.luau")
+	local endings = h:load("src/GServer/Shifts/EndingRules.luau")
 	local cases = {
 		{ "missing_employee", "Died", 80, 1, { "Investigate" } },
 		{ "line_open", "Survived", 80, 1, { "Investigate" } },
@@ -1835,10 +2149,7 @@ do
 		"survivor persists the team consequence with the run outcome"
 	)
 	f.run:Finish("Dawn")
-	check(
-		#f.records[f.p[1]] == 1 and #f.records[f.p[2]] == 1,
-		"endings share existing once-per-run settlement"
-	)
+	check(#f.records[f.p[1]] == 1 and #f.records[f.p[2]] == 1, "endings share existing once-per-run settlement")
 end
 
 do
@@ -1867,12 +2178,63 @@ do
 end
 
 -- Complete each physical repair path with owned tools and puzzle inputs.
+do
+	local f = fixture(1)
+	f.gearMode.Explicit = true
+	f:start()
+	local p = f.p[1]
+	local issued, failScrewdriver = {}, true
+	local give = f.run.d.giveGear
+	f.run.d.giveGear = function(player, id)
+		if id == "Screwdriver" and failScrewdriver then
+			return false
+		end
+		issued[id] = (issued[id] or 0) + 1
+		return give(player, id)
+	end
+	f.near[p] = "Counter"
+	check(
+		not f:act("PickupTool", p, { Tool = "Tester" }) and next(issued) == nil,
+		"kit cannot be collected from a distant station"
+	)
+	f.near[p], f.seated[p] = "Tools", true
+	check(not f:act("PickupTool", p, { Tool = "Tester" }) and next(issued) == nil, "kit pickup requires standing")
+	f.seated[p] = false
+	check(
+		not f:act("PickupTool", p, { Tool = "Tester" }) and f.run.players[p].Kit.Tester,
+		"failed partial kit grant preserves the tool already issued"
+	)
+	failScrewdriver = false
+	check(
+		f:act("PickupTool", p, { Tool = "Tester" })
+			and issued.Tester == 1
+			and issued.Screwdriver == 1
+			and issued.Cartridge == 1,
+		"retry grants only missing kit tools"
+	)
+	check(
+		f:act("PickupTool", p, { Tool = "Cartridge" }) and issued.Cartridge == 1,
+		"duplicate requests cannot duplicate a complete kit"
+	)
+	f.gear[p].Tester = nil
+	f.run.stations.Bench.order.Step = "Diagnose"
+	check(f.run:Snapshot(p).Target == "Tools", "lost equipment directs player to the same kit")
+	check(
+		f:act("PickupTool", p, { Tool = "Tester" }) and issued.Tester == 2 and issued.Screwdriver == 1,
+		"lost gear recovers without reissuing retained tools"
+	)
+	check(
+		not f:act("PickupTool", p, { Tool = "BrassKey" }) and not issued.BrassKey,
+		"repair kit never grants the secret key"
+	)
+end
+
 for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 	local f = fixture(2)
 	f.explicitWorkshop, f.manualPuzzles, f.gearMode.Explicit = true, true, true
 	f:start()
 	local p, other = f.p[1], f.p[2]
-	f.run.order.Fault = fault
+	f.run.stations.Bench.order.Fault = fault
 	local function act(action, station, extra)
 		f.near[p] = station
 		f:advance(0.6)
@@ -1881,53 +2243,54 @@ for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 	check(act("TakeOrder", "Counter"), "interactive journey accepts " .. fault .. " phone")
 	check(f.run:Snapshot(p).RequiredTool == "Tester", "first task directs staff to collect tester")
 	check(
-		act("PickupTool", "Tool_Tester", { Tool = "Tester" }) and f.run.players[p].Kit.Tester,
-		"tester is collected separately"
+		act("PickupTool", "Tools", { Tool = "Tester" })
+			and f.run.players[p].Kit.Tester
+			and f.run.players[p].Kit.Screwdriver
+			and f.run.players[p].Kit.Cartridge,
+		"one pickup supplies the complete reusable repair kit"
 	)
 	check(act("Sit", "Bench") and act("Diagnose", "Bench"), "tester opens diagnostic puzzle")
-	local work = f.run.work
+	local work = f.run.stations.Bench.work
 	f:advance(f.c.WorkSeconds)
-	check(f.run.work == work and f.run.order.Step == "Diagnose", "waiting never solves the diagnostic puzzle")
+	check(
+		f.run.stations.Bench.work == work and f.run.stations.Bench.order.Step == "Diagnose",
+		"waiting never solves the diagnostic puzzle"
+	)
 	check(
 		not f.run:Snapshot(other).Work.Puzzle and f.run:Snapshot(p).Work.Puzzle,
 		"only operator receives interactive controls"
 	)
 	f:advance(0.6)
-	local payload =
-		{ WorkId = work.Id, OrderId = work.OrderId, PuzzleRevision = 0, Move = work.Puzzle.Answer % 3 + 1 }
+	local payload = { WorkId = work.Id, OrderId = work.OrderId, PuzzleRevision = 0, Move = work.Puzzle.Answer % 3 + 1 }
 	check(not f.run:Action(other, "PuzzleInput", payload), "teammate cannot submit another operator's puzzle")
 	check(
-		f.run:Action(p, "PuzzleInput", payload) and f.run.order.Step == "Diagnose",
+		f.run:Action(p, "PuzzleInput", payload) and f.run.stations.Bench.order.Step == "Diagnose",
 		"incorrect diagnosis gives feedback without completing"
 	)
 	f:advance(0.6)
 	check(not f.run:Action(p, "PuzzleInput", payload), "duplicate input revision is rejected")
 	f:solve()
-	check(f.run.order.Step == "Collect", "correct diagnosis unlocks matching replacement")
+	check(f.run.stations.Bench.order.Step == "Collect", "correct diagnosis unlocks matching replacement")
 	f:act("Stand")
 	check(act("Collect", "Part_" .. fault) and f.parts[p], "physical replacement pickup is immediate")
 	check(act("DepositPart", "Bench"), "replacement is delivered before repair")
-	check(act("Sit", "Bench") and not act("Repair", "Bench"), "repair cannot start without screwdriver")
-	f:act("Stand")
-	check(act("PickupTool", "Tool_Screwdriver", { Tool = "Screwdriver" }), "screwdriver is a separate pickup")
+	check(act("PickupTool", "Tools", { Tool = "Screwdriver" }), "repeated kit pickup is safe")
 	check(act("Sit", "Bench") and act("Repair", "Bench"), "part-specific puzzle starts with proper kit")
 	check(
-		f.run:Snapshot(p).Work.Interactive and f.run:Snapshot(p).Work.Puzzle.Kind == fault,
+		f.run:Snapshot(p).Work.Interactive
+			and f.run:Snapshot(p).Work.Puzzle.Kind
+				== ({ Battery = "BatteryFit", Speaker = "Wires", Keypad = "Circuit" })[fault],
 		"fault selects distinct interactive repair"
 	)
 	f:solve()
 	check(
-		f.run.order.Step == "Secure" and f.run.stock[fault] == 3,
+		f.run.stations.Bench.order.Step == "Secure" and f.run.stock[fault] == 3,
 		"solved puzzle and fitting consume one replacement"
 	)
-	for _ = 1, 3 do
-		check(act("Secure", "Bench"), "tighten casing contact with screwdriver")
-	end
+	check(act("Secure", "Bench"), "start casing puzzle with screwdriver")
+	f:solve()
 	f:act("Stand")
-	check(
-		act("PickupTool", "Tool_Cartridge", { Tool = "Cartridge" }),
-		"software cartridge is physically collected"
-	)
+	check(act("PickupTool", "Tools", { Tool = "Cartridge" }), "kit can be revisited without duplicating equipment")
 	check(act("Sit", "Bench") and act("Install", "Bench"), "cartridge opens verification code")
 	f:solve()
 	check(act("Test", "Bench"), "tester opens final function puzzle")
@@ -1946,13 +2309,19 @@ do
 	f:act("TakeOrder")
 	f:advance(0.6)
 	f:act("Diagnose")
-	local work = f.run.work
+	local work = f.run.stations.Bench.work
 	f:advance(f.c.PuzzleTimeout)
-	check(not f.run.work and f.run.order.Step == "Diagnose", "abandoned puzzle times out without advancement")
+	check(
+		not f.run.stations.Bench.work and f.run.stations.Bench.order.Step == "Diagnose",
+		"abandoned puzzle times out without advancement"
+	)
 	f:act("Diagnose")
-	check(f.run.work.Id ~= work.Id, "reopening a puzzle gets a fresh task identity")
+	check(f.run.stations.Bench.work.Id ~= work.Id, "reopening a puzzle gets a fresh task identity")
 	f:act("Stand")
-	check(not f.run.work and f.run.order.Step == "Diagnose", "standing cancels interactive work immediately")
+	check(
+		not f.run.stations.Bench.work and f.run.stations.Bench.order.Step == "Diagnose",
+		"standing cancels interactive work immediately"
+	)
 end
 
 do
@@ -1963,10 +2332,7 @@ do
 	f.near[p] = "Secret_Locker"
 	check(not f:act("Discover", p, { Secret = "Locker" }), "archive drawer requires the actual brass key")
 	f.near[p] = "Tool_BrassKey"
-	check(
-		f:act("PickupTool", p, { Tool = "BrassKey" }),
-		"small brass key can be collected independently of jobs"
-	)
+	check(f:act("PickupTool", p, { Tool = "BrassKey" }), "small brass key can be collected independently of jobs")
 	for _, id in ipairs({ "Timecard", "Tape", "Locker" }) do
 		f.near[p] = "Secret_" .. id
 		f:advance(1.1)
@@ -1978,10 +2344,7 @@ do
 	)
 	f:advance(1.1)
 	f:act("Discover", p, { Secret = "Locker" })
-	check(
-		f.run:Snapshot(p).SecretsFound == 3 and f.run.revenue == 0,
-		"rereading keepsakes cannot duplicate rewards"
-	)
+	check(f.run:Snapshot(p).SecretsFound == 3 and f.run.revenue == 0, "rereading keepsakes cannot duplicate rewards")
 	f.run.night = 3
 	f.run:Finish("Dawn")
 	check(
@@ -1990,22 +2353,17 @@ do
 	)
 	f:act("Replay")
 	f.run:Tick()
-	check(
-		not next(f.gear) and f.run:Snapshot(p).SecretsFound == 0,
-		"replay clears physical kit and run discoveries"
-	)
+	check(not next(f.gear) and f.run:Snapshot(p).SecretsFound == 0, "replay clears physical kit and run discoveries")
 end
 
 do
 	local h = Harness.Environment()
-	local puzzles = h:load("src/GServer/WorkPuzzles.luau")
+	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
 	for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 		local puzzle = puzzles.New("Repair", fault, 3)
-		local ok, solved = puzzles.Input(puzzle, puzzle.Cells and 4 or puzzle.Sequence[1] % 6 + 1, 0)
-		check(
-			ok and not solved and puzzle.Progress == 0,
-			"incorrect " .. fault .. " connection never completes"
-		)
+		local wrongMove = puzzle.Placed and (10 + (table.find(puzzle.Slots, 1) % 3 + 1)) or 7
+		local ok, solved = puzzles.Input(puzzle, wrongMove, 0)
+		check(ok and not solved and puzzle.Progress == 0, "incorrect " .. fault .. " connection never completes")
 		check(not puzzles.Input(puzzle, "1", puzzle.Revision), "puzzle rejects nonnumeric controls")
 	end
 	local f = fixture()
@@ -2016,16 +2374,16 @@ do
 	f.gearMode.Explicit = true
 	f:advance(0.25)
 	check(
-		not f.run.work and f.run:Snapshot(f.p[1]).RequiredTool == "Tester",
+		not f.run.stations.Bench.work and f.run:Snapshot(f.p[1]).RequiredTool == "Tester",
 		"lost kit cancels work and guides replacement pickup"
 	)
-	check(f.run.order.Step == "Diagnose", "lost tool never grants puzzle completion")
+	check(f.run.stations.Bench.order.Step == "Diagnose", "lost tool never grants puzzle completion")
 end
 
 do
 	local h = Harness.Environment()
-	local Director = h:load("src/GServer/EventDirector.luau")
-	local config = h:load("src/GServer/PrototypeConfig.luau").Director
+	local Director = h:load("src/GServer/Anomalies/EventDirector.luau")
+	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").Director
 	local signatures, hadScare = {}, false
 	for seed = 1, 32 do
 		local value, rolls = seed, 0
@@ -2049,22 +2407,13 @@ do
 			local event = director:Next(t, seed % 4 * 25, t < busyUntil)
 			if event then
 				count += 1
-				check(
-					count ~= 1 or event.Minor and not event.Scare,
-					"first interruption is a harmless false alarm"
-				)
-				check(
-					not previous or previous ~= event.Kind,
-					"director avoids immediate repeated event types"
-				)
+				check(count ~= 1 or event.Minor and not event.Scare, "first interruption is a harmless false alarm")
+				check(not previous or previous ~= event.Kind, "director avoids immediate repeated event types")
 				check(
 					not lastByKind[event.Kind] or t - lastByKind[event.Kind] >= config.KindCooldown,
 					"event-specific cooldown prevents repeat farming"
 				)
-				check(
-					event.Kind ~= "Visitor" or t >= config.LethalAfter,
-					"lethal visitor cannot appear early"
-				)
+				check(event.Kind ~= "Visitor" or t >= config.LethalAfter, "lethal visitor cannot appear early")
 				check(t >= busyUntil, "director never overlaps disturbances")
 				if event.Scare then
 					scares += 1
@@ -2074,10 +2423,7 @@ do
 				table.insert(sequence, event.Kind .. "@" .. t)
 			end
 		end
-		check(
-			count <= config.MaxEvents and scares <= config.MaxScares,
-			"night event and scare budgets stay bounded"
-		)
+		check(count <= config.MaxEvents and scares <= config.MaxScares, "night event and scare budgets stay bounded")
 		signatures[table.concat(sequence, ",")] = true
 	end
 	local variety = 0
@@ -2127,13 +2473,185 @@ do
 	f.run:_planScare("Visitor", 2)
 	f.run:_endDisturbance()
 	f:advance(3)
-	check(
-		f.run:Snapshot(p).Scare.Id == id and not f.run.pendingScare,
-		"ending a disturbance cancels its pending scare"
-	)
+	check(f.run:Snapshot(p).Scare.Id == id and not f.run.pendingScare, "ending a disturbance cancels its pending scare")
 	f.run:_planScare("Visitor", 2)
 	f.run:Finish("Dawn")
 	check(not f.run.pendingScare, "results discard pending scare targets")
+end
+
+do
+	local h = Harness.Environment()
+	local risk = h:load("src/GServer/Anomalies/OutdoorRisk.luau")
+	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").OutsideRisk
+	local rolls, exposure = 0, {}
+	local function miss()
+		rolls += 1
+		return 100
+	end
+	check(
+		risk.Step(exposure, 0, true, true, config, miss) == "Outside",
+		"outdoor exposure starts without an attack roll"
+	)
+	for i = 1, 47 do
+		risk.Step(exposure, i * 0.25, true, true, config, miss)
+	end
+	check(rolls == 0, "outdoor grace never samples danger")
+	risk.Step(exposure, 12, true, true, config, miss)
+	for i = 49, 79 do
+		risk.Step(exposure, i * 0.25, true, true, config, miss)
+	end
+	check(rolls == 1, "outdoor risk samples once per eight-second decision")
+	check(
+		risk.Chance(config, 12) < risk.Chance(config, 40) and risk.Chance(config, 10000) == config.MaxChance,
+		"longer outdoor exposure raises attack chance to a bounded maximum"
+	)
+	local function hit()
+		return 1
+	end
+	check(
+		risk.Step(exposure, 20, true, true, config, hit) == "Warning" and exposure.ThreatEndsAt == 27,
+		"successful risk roll grants a full seven-second escape window"
+	)
+	check(
+		risk.Step(exposure, 26.99, false, true, config, hit) == "Escaped" and not exposure.ThreatEndsAt,
+		"reaching the shop before the deadline prevents the outdoor attack"
+	)
+	risk.Step(exposure, 27, true, true, config, hit)
+	risk.Step(exposure, 40, true, true, config, hit)
+	check(not exposure.ThreatEndsAt, "stepping back outside cannot bypass the escape cooldown")
+	risk.Step(exposure, 60, true, true, config, hit)
+	check(exposure.ThreatEndsAt ~= nil, "outdoor risk resumes after the cooldown")
+	check(
+		risk.Step(exposure, 61, nil, true, config, hit) == "Inside" and not exposure.ThreatEndsAt,
+		"missing character geometry cancels danger without pretending an escape was observed"
+	)
+end
+
+do
+	local f = fixture(2)
+	f:start()
+	f:repair()
+	f.c.Events = {}
+	local p, teammate = f.p[1], f.p[2]
+	f:advance(100)
+	f.run.event = { Kind = "Visitor" }
+	check(not f.run:_scare(p, "Visitor"), "visitor cannot injure staff already inside the marked shelter")
+	f.run.event = nil
+	f.seated[p] = true
+	f.run.stations.Bench.work = { Player = p }
+	check(f.run:_scare(p, "Signal"), "night signal queues a server-owned injury")
+	local cue = f.run:Snapshot(p).Scare
+	check(
+		cue.Damage == 25
+			and not cue.Fatal
+			and f.health[p] == 100
+			and f.run.stations.Bench.work == nil
+			and not f.seated[p],
+		"attack announces damage and releases repair before its impact"
+	)
+	check(
+		not f.run:Snapshot(teammate).Scare and not f.run:Snapshot(p).ScareImpact,
+		"private pending damage and another player's scare are not exposed"
+	)
+	f:advance(0.3)
+	check(f.health[p] == 100, "face has time to appear before the server impact")
+	f:advance(0.31)
+	check(
+		f.health[p] == 75 and f.health[teammate] == 100 and f.run:Snapshot(p).Injury.Damage == 25,
+		"scare really injures its target without damaging a teammate"
+	)
+	f:advance(1)
+	check(f.health[p] == 75 and not f.run.players[p].ScareImpact, "repeated ticks never apply a scare twice")
+	f:advance(21)
+	f.run:Damage(p, 60, "test injury")
+	f:advance(21)
+	check(f.run:_scare(p, "Signal") and f.run:Snapshot(p).Scare.Fatal, "low-health signal correctly predicts death")
+	f:advance(0.61)
+	check(
+		not f.run.players[p].Alive and f.run.players[teammate].Alive and #f.records[p] == 1,
+		"fatal scare settles one death while teammates keep playing"
+	)
+	f:advance(1)
+	check(#f.records[p] == 1, "fatal scare cannot duplicate death rewards")
+end
+
+do
+	local f = fixture(4)
+	f:start()
+	f:repair()
+	f.c.Events = {}
+	local p, q = f.p[1], f.p[2]
+	f.run.d.random = function(low)
+		return low
+	end
+	f.outside[p] = true
+	f:advance(89)
+	check(not f.run.players[p].Outside and not f.run:Snapshot(p).Scare, "outside spawning and calm opening stay safe")
+	f:advance(1)
+	f:advance(12)
+	local threat = f.run:Snapshot(p).Outside
+	check(
+		threat and threat.ThreatEndsAt == f.h.time + 7 and f.run:Snapshot(p).Target == "StaffDoor",
+		"outdoor exposure targets the door with an actionable escape deadline"
+	)
+	check(not f.run:Snapshot(q).Outside and not f.run:Snapshot(q).Scare, "indoor teammates inherit no outdoor threat")
+	f.outside[p] = false
+	f:advance(6)
+	check(
+		not f.run:Snapshot(p).Outside and f.health[p] == 100 and not f.run.players[p].ScareImpact,
+		"entering the shop cancels the impending attack without injury"
+	)
+	f.outside[p] = true
+	f:advance(31)
+	f:advance(12)
+	f:advance(7)
+	check(f.run:Snapshot(p).Scare and f.health[p] == 100, "ignoring early footsteps dispatches a real attack")
+	f:advance(0.61)
+	check(
+		f.health[p] == 65 and f.run.players[p].Alive,
+		"early outdoor attack injures instead of instantly killing full health"
+	)
+	f.outside[p] = false
+	f:advance(31)
+	f.outside[q] = true
+	f:advance(1)
+	f:advance(12)
+	f:advance(7)
+	f:advance(0.61)
+	check(
+		not f.run.players[q].Alive and f.run.players[p].Alive and f.health[f.p[3]] == 100,
+		"late outdoor attack is fatal only to the staff member who ignored the warning"
+	)
+	check(string.find(f.run:Snapshot(q).DeathReason, "outside", 1, true), "death explains the ignored outdoor warning")
+	-- Results/replay cancel any attack that has not reached its impact timestamp.
+	f.run.players[p].NextScare = nil
+	check(f.run:_scare(p, "Signal"), "surviving staff can receive a later threat")
+	f.run:Finish("Dawn")
+	local hp = f.health[p]
+	f:advance(1)
+	check(
+		f.health[p] == hp and not f.run.players[p].ScareImpact and not f.run.players[p].Outside,
+		"results discard delayed injuries and outdoor exposure"
+	)
+end
+
+do
+	local f = fixture(2)
+	f:start()
+	f:repair()
+	f.c.Events = {}
+	local p = f.p[1]
+	f:advance(100)
+	check(f.run:_scare(p, "Signal"), "disconnect fixture has a dispatched attack")
+	f.run:Remove(p)
+	f:advance(1)
+	check(
+		not f.records[p] and f.health[p] == 100,
+		"departure before impact cannot invent a death or mutate departed health"
+	)
+	local q = f.p[2]
+	f.h.time = f.run.nightAt + f.c.NightSeconds - 0.2
+	check(not f.run:_scare(q, "Signal"), "a new scare cannot promise an impact after dawn")
 end
 
 -- Real rule transitions across 1-4 players, including chapter settlement and ready gates.
@@ -2202,14 +2720,10 @@ for count = 1, 4 do
 					"unanimous ready advances with a fresh action identity"
 				)
 				f.h.env.Color3 = require("@lune/roblox").Color3
-				local adapter = f.h:load("src/GServer/GamePrototype.luau")
+				local adapter = f.h:load("src/GServer/Services/GamePrototype.luau")
 				check(
-					adapter.Request(
-						{ run = f.run },
-						f.p[1],
-						"PrototypeAction",
-						{ RunId = oldId, Action = "Replay" }
-					).Code == "ShiftChanged",
+					adapter.Request({ run = f.run }, f.p[1], "PrototypeAction", { RunId = oldId, Action = "Replay" }).Code
+						== "ShiftChanged",
 					"old night requests cannot mutate the next night"
 				)
 				check(
@@ -2222,7 +2736,7 @@ for count = 1, 4 do
 				end
 				f.run:Tick()
 				check(
-					not f.run.order and f.run.phase == "Night",
+					not f.run.stations.Bench.order and f.run.phase == "Night",
 					"later nights start without repeating training"
 				)
 			end
@@ -2280,17 +2794,14 @@ do
 	f:act("Replay", f.p[1])
 	check(not f:act("Replay", f.p[2]), "unrecorded outcome cannot ready for a new night")
 	f.run:Tick()
-	check(
-		f.run.night == 1 and f.run.phase == "Results",
-		"outcome failure blocks continuation without losing progress"
-	)
+	check(f.run.night == 1 and f.run.phase == "Results", "outcome failure blocks continuation without losing progress")
 end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/CustomerCatalog.luau")
-	local puzzles = h:load("src/GServer/WorkPuzzles.luau")
-	local modes = h:load("src/GServer/ModeRules.luau")
+	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
+	local puzzles = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local modes = h:load("src/GServer/Shifts/ModeRules.luau")
 	local kinds = {}
 	for _, chapter in ipairs({ "nina", "jonas", "silas" }) do
 		local deck = catalog.Deck(function(low)
@@ -2315,15 +2826,18 @@ do
 			"service requirements fit the physical template and preserve solo reaction time"
 		)
 		local puzzle = puzzles.New("Install", "Speaker", i * 919, job.SequenceLength)
-		check(#puzzle.Sequence == job.SequenceLength, "service profile changes actual puzzle requirements")
-		kinds[table.concat(puzzle.Sequence, ",")] = true
+		check(
+			puzzle.Kind == "Dials" or #puzzle.Sequence == job.SequenceLength,
+			"service profile selects playable dial or code requirements"
+		)
+		kinds[puzzle.Kind .. table.concat(puzzle.Sequence or puzzle.Targets, ",")] = true
 	end
 	local count = 0
 	for _ in pairs(kinds) do
 		count += 1
 	end
 	check(count >= 10, "verification labels vary independently instead of repeating six patterns")
-	local config = h:load("src/GServer/PrototypeConfig.luau").Director
+	local config = h:load("src/GServer/Shifts/PrototypeConfig.luau").Director
 	local late = modes.Director(config, "Endless", 100)
 	check(
 		late.MaxEvents > config.MaxEvents
@@ -2372,16 +2886,16 @@ for count = 1, 4 do
 	f:advance(0.6)
 	check(f:act("Repair", actor(4)), "replacement puzzle accepts new seated operator")
 	f:solve()
-	for _ = 1, f.run.order.RequiredContacts do
-		f:advance(0.6)
-		check(f:act("Secure", actor(4)), "job-specific contact requirement is completable")
-	end
+	f:advance(0.6)
+	check(f:act("Secure", actor(4)), "next operator starts reassembly")
+	f:solve()
+	check(f.run.stations.Bench.order.Contacts == 4, "cooperative operator secures all four screws")
 	f:advance(0.6)
 	check(f:act("Install", actor(4)), "software requirements follow physical repair")
 	f:solve()
-	if f.run.order.Step == "Evidence" then
+	if f.run.stations.Bench.order.Step == "Evidence" then
 		for _, p in ipairs(f.p) do
-			f:act("Vote", p, { OrderId = f.run.order.Id, Choice = "Report" })
+			f:act("Vote", p, { OrderId = f.run.stations.Bench.order.Id, Choice = "Report" })
 		end
 	end
 	f:advance(0.6)
@@ -2392,6 +2906,184 @@ for count = 1, 4 do
 	for _, p in ipairs(f.p) do
 		check(f.run.players[p].Repairs == before[p] + 1, "each contributor earns one repair credit")
 	end
+end
+
+-- Every new task has a bounded solution and rejects premature/stale input.
+do
+	local h = Harness.Environment()
+	local rules = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	for seed = 1, 24 do
+		for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
+			local probe = rules.New("Diagnose", fault, seed, 4, 100)
+			check(
+				not rules.Input(probe, probe.Answer + 3, 0, 100),
+				"diagnosis requires all probe readings before choosing a part"
+			)
+			check(
+				rules.Snapshot(probe).Answer == nil and rules.Snapshot(probe).Readings[1] == "NOT TESTED",
+				"unmeasured readings and diagnosis answer stay private"
+			)
+			for i = 1, 3 do
+				check(rules.Input(probe, i, probe.Revision, 100), "probe acquires a reading")
+			end
+			local ok, solved = rules.Input(probe, probe.Answer + 3, probe.Revision, 100)
+			check(ok and solved, "measured diagnosis accepts the correct component")
+			local puzzle = rules.New("Repair", fault, seed, 4, 100)
+			check(
+				not rules.Input(puzzle, 99, 0, 100) and puzzle.Revision == 0,
+				"out-of-range repair control cannot mutate task"
+			)
+			if puzzle.Placed then
+				local move = 10 + table.find(puzzle.Slots, 1)
+				check(rules.Input(puzzle, move, 0, 100), "matching item fits its socket")
+				check(not rules.Input(puzzle, move, 0, 100), "replayed drag revision is rejected")
+				check(
+					not rules.Input(puzzle, move, puzzle.Revision, 100) and puzzle.Progress == 1,
+					"same part cannot fill multiple slots"
+				)
+				for item = 2, 3 do
+					ok, solved = rules.Input(puzzle, item * 10 + table.find(puzzle.Slots, item), puzzle.Revision, 100)
+				end
+			else
+				check(rules.Snapshot(puzzle).Targets == nil, "circuit solution angles stay server-only")
+				for i, target in ipairs(puzzle.Targets) do
+					for _ = 1, (target - puzzle.Rotations[i]) % 4 do
+						check(rules.Input(puzzle, i, puzzle.Revision, 100), "circuit tile rotates one quarter turn")
+					end
+				end
+				ok, solved = rules.Input(puzzle, 7, puzzle.Revision, 100)
+			end
+			check(ok and solved, "repair geometry has a reachable solution")
+			check(not rules.Input(puzzle, 1, puzzle.Revision, 100), "completed repair cannot award twice")
+		end
+		local memory = rules.New("Test", "Battery", seed, 6, 100)
+		check(not rules.Input(memory, memory.Sequence[1], 0, 100), "memory cannot be answered during demonstration")
+		local _, solved = rules.Input(memory, memory.Sequence[1] % 6 + 1, 0, memory.RevealUntil)
+		check(not solved and memory.Progress == 0, "wrong memory input restarts input progress")
+		check(
+			rules.Input(memory, 7, memory.Revision, 110) and memory.RevealAt == 110.8,
+			"replay starts a fresh server-timed demonstration"
+		)
+		for _, move in ipairs(memory.Sequence) do
+			_, solved = rules.Input(memory, move, memory.Revision, memory.RevealUntil)
+		end
+		check(solved, "memory completes only after correct repeated inputs")
+	end
+end
+
+do
+	local h = Harness.Environment()
+	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
+	local rules = h:load("src/GServer/Repair/WorkPuzzles.luau")
+	local kinds = {
+		"Clean",
+		"Debris",
+		"Broken",
+		"Screen",
+		"SIM",
+		"Fuse",
+		"Charger",
+		"Sort",
+		"Assembly",
+		"Screws",
+		"Buttons",
+		"PhoneNumber",
+		"Waves",
+		"Meter",
+		"Stamp",
+		"Speaker",
+	}
+	for seed = 1, 24 do
+		for _, kind in ipairs(kinds) do
+			local p, now = bench.New(kind, seed, 100), 100
+			check(not rules.Input(p, 0, p.Revision, now), "out-of-range bench control rejected")
+			check(not rules.Input(p, 1, -1, now), "stale bench revision rejected")
+			local solved = false
+			for _ = 1, 100 do
+				if p.RevealUntil then
+					now = math.max(now, p.RevealUntil)
+				end
+				now += 0.3
+				local move = benchMove(p, now) or p.Sequence[p.Progress + 1]
+				local revision = p.Revision
+				local ok
+				ok, solved = rules.Input(p, move, revision, now)
+				check(ok and p.Revision > revision, "accepted task input advances revision: " .. kind)
+				check(not rules.Input(p, move, revision, now), "replayed input cannot progress task: " .. kind)
+				if solved then
+					break
+				end
+			end
+			check(solved, "task has a reachable solution: " .. kind)
+			check(not rules.Input(p, 1, p.Revision, now), "solved task rejects more moves")
+		end
+	end
+	local sim = bench.New("SIM", 1, 0)
+	local _, done = rules.Input(sim, 11, 0, 0)
+	check(not done, "wrong SIM orientation cannot fit")
+	local assembly = bench.New("Assembly", 2, 0)
+	local _, early = rules.Input(assembly, 30 + table.find(assembly.Slots, 3), 0, 0)
+	check(not early and assembly.Progress == 0, "cover cannot fit before board and battery")
+	local stamp = bench.New("Stamp", 2, 0)
+	local _, passed = rules.Input(stamp, 1, 0, 0)
+	check(not passed, "PASS stamp cannot approve a failing test")
+	local meter = bench.New("Meter", 2, 0)
+	rules.Input(meter, 2, meter.Revision, 0)
+	rules.Input(meter, 2, meter.Revision, 0)
+	rules.Input(meter, 2, meter.Revision, 0)
+	local _, instant = rules.Input(meter, 7, meter.Revision, 0)
+	check(not instant and meter.Good == 0, "rapid meter clicks cannot fabricate elapsed time")
+	local speaker = bench.New("Speaker", 2, 0)
+	check(not rules.Input(speaker, speaker.Sequence[1], 0, 0), "speaker answers wait for demonstration")
+	local secure = rules.New("Secure", "Battery", 1, 4, 0, true)
+	local snapshot = rules.Snapshot(secure)
+	check(snapshot.Pending == nil and snapshot.Seed == nil, "future task plan stays server-only")
+	for i = 1, 3 do
+		local revision = secure.Revision
+		local ok, completed = rules.Input(secure, i * 10 + table.find(secure.Slots, i), revision, i)
+		check(ok and not completed, "assembly alone cannot finish securing")
+		check(not rules.Input(secure, 11, revision, i), "previous stage input rejected across transition")
+	end
+	check(secure.Kind == "Screws" and secure.TaskIndex == 2, "assembly transitions to screws under the same work ID")
+	for screw = 1, 4 do
+		for turn = 1, 3 do
+			local ok, complete = rules.Input(secure, screw, secure.Revision, 4 + screw + turn)
+			check(
+				ok and complete == (screw == 4 and turn == 3),
+				"all four screws require three turns before installation"
+			)
+		end
+	end
+end
+
+do
+	local f = fixture(1)
+	f:start()
+	local player = f.p[1]
+	local firstLine = f.run:Snapshot(player).Dialogue
+	check(
+		firstLine
+			and firstLine.Speaker == f.run.stations.Bench.order.Customer
+			and firstLine.Text == f.run.stations.Bench.order.Complaint,
+		"customer arrival publishes current spoken complaint"
+	)
+	check(f.run:Snapshot(player).Dialogue.Id == firstLine.Id, "speech has stable identity between snapshots")
+	f.h.time = firstLine.ExpiresAt + 1
+	check(not f.run:Snapshot(player).Dialogue, "server omits expired speech")
+	f.run.stations.Bench.order.Step = "Test"
+	f.near[player] = "Bench"
+	local physicalStation = "OtherSeat"
+	f.run.d.seated = function(_, station)
+		return not station or station == physicalStation
+	end
+	check(not f:act("Test"), "unrelated seat cannot authorize final testing")
+	physicalStation = "Bench"
+	f:advance(0.6)
+	check(f:act("Test") and f.run.stations.Bench.work.Station == "Bench", "final testing uses the same repair station")
+	check(f.run:Snapshot(player).Target == "Bench", "final-test objective stays at the repair bench")
+	physicalStation = "OtherSeat"
+	f:advance(0.2)
+	check(not f.run.stations.Bench.work, "leaving the correct test seat cancels unfinished test")
 end
 
 print(string.format("PASS: %d playable prototype and outcome checks.", total))

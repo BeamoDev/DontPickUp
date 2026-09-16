@@ -1,43 +1,50 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
-assert(
-	script:IsDescendantOf(player:WaitForChild("PlayerScripts")),
-	"GClient must sync into StarterPlayerScripts"
-)
-local View = require(script.Parent.PrototypeView)
-local RepairPresentation = require(script.Parent.RepairPresentation)
-local RepairAssembly = require(script.Parent.RepairAssembly)
-local ScarePresentation = require(script.Parent.ScarePresentation)
-local PuzzleView = require(script.Parent.PuzzleView)
-local StationInteraction = require(script.Parent.StationInteraction)
+assert(script:IsDescendantOf(player:WaitForChild("PlayerScripts")), "GClient must sync into StarterPlayerScripts")
+local Requests = require(script.Parent.Networking.Requests)
+local InspectionView = require(script.Parent.UI.InspectionView)
+local WorldInteraction = require(script.Parent.Interactions.WorldInteraction)
+local FirstPersonCamera = require(script.Parent.Interactions.FirstPersonCamera)
+local View = require(script.Parent.UI.PrototypeView)
+local SubtitleView = require(script.Parent.Dialogue.SubtitleView)
+local RepairPresentation = require(script.Parent.Repair.RepairPresentation)
+local RepairAssembly = require(script.Parent.Repair.RepairAssembly)
+local ScarePresentation = require(script.Parent.Effects.ScarePresentation)
+local PuzzleView = require(script.Parent.Repair.PuzzleView)
+local StationInteraction = require(script.Parent.Interactions.StationInteraction)
 local state = { Revision = -1, Phase = "Waiting" }
 local request, pending, view, presentation, assembly, scares, puzzles, stationInteraction
+local subtitles, inspection, worldInteraction
 local stopped = false
 local connections = {}
 
+local function updateRepairTasks()
+	-- Release puzzle visibility before the fitting animation captures the phone.
+	if puzzles and puzzles.physical and (not state.Work or not state.Work.Puzzle) then
+		puzzles.physical:Clear()
+	end
+	if assembly then
+		assembly:Update(state)
+	end
+	if puzzles then
+		puzzles:Update(state, pending ~= nil, (view.modal.Visible or state.Inspection ~= nil))
+	end
+end
+
 local function apply(snapshot)
-	if
-		type(snapshot) ~= "table"
-		or type(snapshot.Revision) ~= "number"
-		or snapshot.Revision < state.Revision
-	then
+	if type(snapshot) ~= "table" or type(snapshot.Revision) ~= "number" or snapshot.Revision < state.Revision then
 		return
 	end
 	state = snapshot
 	if view then
 		view:SetState(state)
 		if presentation then
-			presentation:Update(state, view.modal.Visible)
+			presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil))
 		end
-		if assembly then
-			assembly:Update(state)
-		end
+		updateRepairTasks()
 		if scares then
 			scares:Update(state)
-		end
-		if puzzles then
-			puzzles:Update(state, pending ~= nil, view.modal.Visible)
 		end
 		if stationInteraction then
 			stationInteraction:Update(state, pending ~= nil)
@@ -45,77 +52,58 @@ local function apply(snapshot)
 	end
 end
 
-local function send(action, choice)
-	if pending or stopped then
-		return
-	end
-	if not request then
+local requests = Requests.new({
+	state = function()
+		return state
+	end,
+	remote = function()
+		return request
+	end,
+	clock = os.clock,
+	spawn = task.spawn,
+	apply = apply,
+	busy = function(value)
+		pending = value and true or nil
 		if view then
-			view:Error("DataNotReady")
+			view:SetBusy(value)
 		end
-		return
-	end
-	local operation = { Started = os.clock(), RunId = state.RunId }
-	local name, payload = action, nil
-	if action ~= "ReturnLobby" and action ~= "GetPrototype" then
-		name = "PrototypeAction"
-		payload = { RunId = state.RunId, Action = action }
-		if action == "Vote" then
-			payload.OrderId, payload.Choice = state.Order and state.Order.Id, choice
-		elseif state.Event and table.find({ "RestorePower", "Silence", "Answer", "Records" }, action) then
-			payload.EventId = state.Event.Id
-		else
-			payload.OrderId = state.Order and state.Order.Id
-			if action == "Collect" then
-				payload.Part = state.Order and state.Order.Fault
-			end
-			if action == "Secure" then
-				payload.Contact = state.Order and (state.Order.Contacts or 0) + 1
-			end
-			if action == "PickupTool" then
-				payload.Tool = state.RequiredTool
-			end
+	end,
+	error = function(code)
+		if view then
+			view:Error(code)
 		end
-		if type(choice) == "table" then
-			for _, key in ipairs({ "FocusId", "WorkId", "OrderId", "Move", "PuzzleRevision" }) do
-				payload[key] = choice[key]
-			end
-		end
-	end
-	pending = operation
-	if view then
-		view:SetBusy(true)
-	end
-	task.spawn(function()
-		local ok, response = pcall(function()
-			return request:InvokeServer(name, payload)
-		end)
-		if stopped then
-			return
-		end
-		if ok and type(response) == "table" then
-			apply(response.State)
-		end
-		if pending ~= operation then
-			return
-		end
-		pending = nil
-		view:SetBusy(false)
-		if operation.RunId and operation.RunId ~= state.RunId then
-			return
-		end
-		if not ok or type(response) ~= "table" then
-			view:Error("ConnectionError")
-		elseif not response.Ok then
-			view:Error(response.Code)
-		end
-	end)
+	end,
+})
+local function send(action, choice)
+	requests:Send(action, choice)
 end
 
 view = View.new(player:WaitForChild("PlayerGui"), {
 	act = send,
 	lobby = function()
 		send("ReturnLobby")
+	end,
+})
+local firstPerson = FirstPersonCamera.new(view.gui, player, game:GetService("UserInputService"))
+inspection = InspectionView.new(view.gui, {
+	input = game:GetService("UserInputService"),
+	gui = game:GetService("GuiService"),
+	clock = function()
+		return workspace:GetServerTimeNow()
+	end,
+	send = send,
+})
+worldInteraction = WorldInteraction.new(view.gui, {
+	input = game:GetService("UserInputService"),
+	workspace = workspace,
+	player = player,
+	send = function(action, payload)
+		if payload.Station == "Answer" then
+			view.confirmAnswer = state.Event and state.Event.Id
+			view:Render()
+		else
+			send(action, payload)
+		end
 	end,
 })
 local guiService = game:GetService("GuiService")
@@ -125,7 +113,38 @@ local function reducedMotion()
 	local reduced = settings and settings:FindFirstChild("ReducedFlashes")
 	return guiService.ReducedMotionEnabled or (reduced ~= nil and reduced.Value == true)
 end
-puzzles = PuzzleView.new(view.gui, send)
+subtitles = SubtitleView.new(view.gui, {
+	player = player,
+	enabled = function()
+		local data = player:FindFirstChild("PlayerData")
+		local settings = data and data:FindFirstChild("Settings")
+		local setting = settings and settings:FindFirstChild("Subtitles")
+		return not setting or setting.Value
+	end,
+	clock = function()
+		return workspace:GetServerTimeNow()
+	end,
+	workspace = workspace,
+	render = game:GetService("RunService"),
+	reduced = reducedMotion,
+})
+puzzles = PuzzleView.new(view.gui, send, {
+	input = game:GetService("UserInputService"),
+	workspace = workspace,
+	player = player,
+	render = game:GetService("RunService"),
+	tweens = game:GetService("TweenService"),
+	cameraReady = function()
+		return presentation and presentation.saved ~= nil and not presentation.saved.Returning
+	end,
+	isBusy = function()
+		return pending ~= nil
+	end,
+	reduced = reducedMotion,
+	menuOpen = function()
+		return guiService.MenuIsOpen
+	end,
+})
 stationInteraction = StationInteraction.new({
 	workspace = workspace,
 	player = player,
@@ -181,6 +200,7 @@ local function cleanup()
 		return
 	end
 	stopped = true
+	requests:Destroy()
 	for _, connection in ipairs(connections) do
 		connection:Disconnect()
 	end
@@ -189,6 +209,10 @@ local function cleanup()
 	scares:Destroy()
 	puzzles:Destroy()
 	stationInteraction:Destroy()
+	subtitles:Destroy()
+	inspection:Destroy()
+	worldInteraction:Destroy()
+	firstPerson:Destroy()
 	local camera = workspace.CurrentCamera
 	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if camera and camera.CameraType ~= Enum.CameraType.Scriptable and humanoid then
@@ -228,16 +252,18 @@ end)
 task.spawn(function()
 	local renderedSecond, viewport
 	while not stopped and script.Parent and view.gui.Parent do
-		if pending and os.clock() - pending.Started >= 12 then
-			-- Do not start overlapping invocations while the server is still processing one.
-			view:Error("ConnectionError")
-			pending.Started = os.clock()
-		end
-		presentation:Update(state, view.modal.Visible)
-		assembly:Update(state)
+		requests:Tick()
+		presentation:Update(state, (view.modal.Visible or state.Inspection ~= nil))
+		updateRepairTasks()
 		scares:Update(state)
-		puzzles:Update(state, pending ~= nil, view.modal.Visible)
 		stationInteraction:Update(state, pending ~= nil)
+		inspection:Update(state, view.modal.Visible or guiService.MenuIsOpen)
+		worldInteraction:Update(state, view.modal.Visible or guiService.MenuIsOpen or pending ~= nil)
+		subtitles:Update(
+			state,
+			view.modal.Visible or guiService.MenuIsOpen or state.Event ~= nil,
+			puzzles.physical and puzzles.physical.folder ~= nil
+		)
 		local camera = workspace.CurrentCamera
 		if
 			camera
@@ -248,9 +274,7 @@ task.spawn(function()
 		then
 			for _, member in ipairs(state.Roster or {}) do
 				local other = member.Alive and Players:GetPlayerByUserId(member.UserId)
-				local humanoid = other
-					and other.Character
-					and other.Character:FindFirstChildOfClass("Humanoid")
+				local humanoid = other and other.Character and other.Character:FindFirstChildOfClass("Humanoid")
 				if humanoid then
 					if camera.CameraSubject ~= humanoid then
 						camera.CameraSubject = humanoid

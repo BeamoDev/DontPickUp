@@ -6,12 +6,32 @@ local function check(value, label)
 	total += 1
 end
 
+local function touchSignal()
+	local signal = { Connections = {} }
+	function signal:Connect(callback)
+		local connection = { Connected = true, Callback = callback }
+		function connection:Disconnect()
+			self.Connected = false
+		end
+		table.insert(self.Connections, connection)
+		return connection
+	end
+	function signal:Fire(hit)
+		for _, connection in ipairs(self.Connections) do
+			if connection.Connected then
+				connection.Callback(hit)
+			end
+		end
+	end
+	return signal
+end
+
 local function fixture()
 	local h = Harness.Environment()
 	local config = h:load("src/LServer/Core/Config.luau")
 	local snapshots, history, moved, exited, ready = {}, {}, {}, {}, {}
 	local queues
-	local party = h:load("src/LServer/PartyService.luau").new({
+	local party = h:load("src/LServer/Parties/PartyService.luau").new({
 		config = config,
 		clock = function()
 			return h.time
@@ -39,7 +59,7 @@ local function fixture()
 			return false, "StudioPreviewComplete"
 		end,
 	})
-	queues = h:load("src/LServer/WorldQueueService.luau").new({
+	queues = h:load("src/LServer/Queues/WorldQueueService.luau").new({
 		config = config,
 		party = party,
 		clock = function()
@@ -191,7 +211,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local Geometry = h:load("src/LServer/QueueGeometry.luau")
+	local Geometry = h:load("src/LServer/Queues/QueueGeometry.luau")
 	local cframe = Roblox.CFrame.new(10, 0, 0) * Roblox.CFrame.Angles(0, math.pi / 2, 0)
 	local size = Roblox.Vector3.new(8, 1, 2)
 	check(
@@ -239,7 +259,7 @@ do
 	child(panel, "TextLabel", "PlayerTitle")
 	panel.Size, panel.Position = "authored-panel-size", "authored-panel-position"
 	local created, left
-	local view = h:load("src/LClient/QueueView.luau").new(gui, {
+	local view = h:load("src/LClient/UI/QueueView.luau").new(gui, {
 		clock = function()
 			return h.time
 		end,
@@ -363,6 +383,8 @@ do
 		local refs = child(queue, "Folder", "Refs")
 		for name, z in pairs({ Enter = 0, EnterPos = 10, ExitPos = 0 }) do
 			local part = child(refs, "Part", name)
+			part.Touched = touchSignal()
+			part.CanTouch = false
 			part.CFrame = Roblox.CFrame.new(x, 0, z)
 			part.Position = part.CFrame.Position
 			part.Size = Roblox.Vector3.new(4, 1, 4)
@@ -383,6 +405,14 @@ do
 	local one, board = scene(0)
 	local two, legacyBoard = scene(100, true)
 	local a = h:player(1)
+	h.players.GetPlayerFromCharacter = function(_, model)
+		for _, player in ipairs(h.players:GetPlayers()) do
+			if player.Character == model then
+				return player
+			end
+		end
+		return nil
+	end
 	local character = child(workspace, "Model", "Avatar")
 	a.Character = character
 	local root = child(character, "Part", "HumanoidRootPart")
@@ -395,7 +425,7 @@ do
 		root.Position = cframe.Position
 	end
 	local config = h:load("src/LServer/Core/Config.luau")
-	local party = h:load("src/LServer/PartyService.luau").new({
+	local party = h:load("src/LServer/Parties/PartyService.luau").new({
 		config = config,
 		clock = function()
 			return h.time
@@ -415,7 +445,8 @@ do
 			return true
 		end,
 	})
-	local world = h:load("src/LServer/QueueWorld.luau").new(
+	local dataReady = false
+	local world = h:load("src/LServer/Queues/QueueWorld.luau").new(
 		{ Players = h.players, RunService = {
 			IsStudio = function()
 				return true
@@ -424,12 +455,40 @@ do
 		config,
 		{
 			IsReady = function()
-				return true
+				return dataReady
 			end,
 		},
 		party,
 		{ PushQueue = function() end }
 	)
+	local enter = one.Refs.Enter
+	check(enter.CanTouch and #enter.Touched.Connections == 1, "touch detection binds immediately at startup")
+	enter.Touched:Fire(root)
+	check(not world.queues:Get(a).Active and root.Position.Z == 0, "touch cannot bypass profile readiness")
+	dataReady = true
+	enter.Touched:Fire(root)
+	check(not world.queues:Get(a).Active, "repeated contacts respect failed-admission retry limit")
+	h.time += 0.5
+	root.Position = Roblox.Vector3.new(50, 3, 0)
+	enter.Touched:Fire(root)
+	check(not world.queues:Get(a).Active, "touch without server proximity cannot admit a player")
+	root.Position = Roblox.Vector3.new(0, 3, 0)
+	enter.Touched:Fire(one.UI)
+	check(not world.queues:Get(a).Active, "non-character contact cannot create a queue")
+	enter.Touched:Fire(root)
+	check(
+		world.queues:Get(a).Configuring and root.Position.Z == 10,
+		"touch moves and admits synchronously without a maintenance tick or scheduler drain"
+	)
+	check(
+		board.Players.Text == "1/4" and one.InQueue:FindFirstChild("DPU_1"),
+		"touch immediately updates board and physical roster"
+	)
+	local entry = world.queues:Get(a).EntryId
+	for _ = 1, 10 do
+		enter.Touched:Fire(root)
+	end
+	check(world.queues:Get(a).EntryId == entry, "multiple limb contacts cannot duplicate entry")
 	world:Tick()
 	h:drain()
 	world:Render()
@@ -462,7 +521,26 @@ do
 		board.Gamemode.Text == "Endless" and board.GreenStatus.Text == "STARTS 20s",
 		"billboard mode and gathering deadline updated"
 	)
+	local b = h:player(2)
+	local secondCharacter = child(workspace, "Model", "SecondAvatar")
+	b.Character = secondCharacter
+	local secondRoot = child(secondCharacter, "Part", "HumanoidRootPart")
+	secondRoot.Position = Roblox.Vector3.new(0, 3, 0)
+	secondRoot.Size = root.Size
+	local secondHumanoid = child(secondCharacter, "Humanoid", "Humanoid")
+	secondHumanoid.Health, secondHumanoid.HipHeight = 100, 2
+	secondCharacter.PivotTo = function(_, cframe)
+		secondRoot.Position = cframe.Position
+	end
+	enter.Touched:Fire(secondRoot)
+	check(
+		world.queues:Get(b).Active and secondRoot.Position.Z == 13 and board.Players.Text == "2/2",
+		"touch joins an existing party and moves to its free slot without polling"
+	)
+	world.queues:Leave(b, false)
 	world.queues:Leave(a, false)
+	enter.Touched:Fire(root)
+	check(not world.queues:Get(a).Active, "touch at overlapping ExitPos cannot immediately rejoin")
 	world:Tick()
 	h:drain()
 	check(
@@ -481,12 +559,24 @@ do
 	world:Tick()
 	h.time += 3
 	root.Position = Roblox.Vector3.new(0, 3, 0)
-	world:Tick()
-	h:drain()
+	enter.Touched:Fire(root)
 	check(world.queues:Get(a).Active, "stepping outside and back re-enables queue entry")
 	humanoid.Health = 0
 	world:Tick()
 	check(not world.queues:Get(a).Active, "death removes physical reservation")
+	enter.Touched:Fire(root)
+	check(not world.queues:Get(a).Active, "dead character touches cannot reenter")
+	humanoid.Health = 100
+	root.Position = Roblox.Vector3.new(50, 3, 0)
+	world:Tick()
+	root.Position = Roblox.Vector3.new(0, 3, 0)
+	world:Tick()
+	h:drain()
+	check(
+		world.queues:Get(a).Active and root.Position.Z == 10,
+		"bounds fallback still admits a character when physics sends no touch"
+	)
+	world.queues:Leave(a, false)
 	board:Destroy()
 	world:Discover()
 	local replacement = child(one.UI, "BillboardGui", "BillboardGui")
@@ -497,6 +587,12 @@ do
 	one.Parent = nil
 	world:Discover()
 	check(world.byInstance[one] == nil, "deleted workspace pad unregisters")
+	check(not enter.Touched.Connections[1].Connected, "removed pad disconnects touch listener")
+	world:Shutdown()
+	check(
+		not two.Refs.Enter.Touched.Connections[1].Connected,
+		"shutdown disconnects remaining touch listeners"
+	)
 end
 
 do
@@ -583,7 +679,7 @@ end
 do
 	local h = Harness.Environment()
 	local active, errors, applied = nil, {}, {}
-	local requests = h:load("src/LClient/QueueRequests.luau").new({
+	local requests = h:load("src/LClient/Networking/QueueRequests.luau").new({
 		clock = function()
 			return h.time
 		end,
@@ -647,13 +743,17 @@ do
 	local stroke = child(background, "UIStroke", "UIStroke")
 	local title = child(board, "TextLabel", "Title")
 	title.Size, title.Position = "original-size", "original-position"
-	child(board, "TextLabel", "Gamemode")
-	child(board, "TextLabel", "Players")
-	local status = child(board, "TextLabel", "GreenStatus")
-	local holder = child(board, "Frame", "IconWrapper")
-	local icon = child(holder, "ImageLabel", "GamemodeIcon")
+	title.TextScaled, title.TextSize, title.TextWrapped = false, 24, true
+	child(board, "TextLabel", "PlayerCount")
+	local status = child(board, "TextLabel", "Status")
+	status.TextScaled, status.TextSize, status.TextWrapped = false, 18, true
+	local icon = child(board, "ImageLabel", "Icon")
+	local holder = child(icon, "Frame", "Bar")
+	local mode = child(holder, "TextLabel", "Gamemode")
+	local iconStroke = child(icon, "UIStroke", "UIStroke")
+	iconStroke.Color = Roblox.Color3.fromRGB(58, 58, 58)
 	icon.Image = "original-story"
-	local view = h:load("src/LServer/QueueBillboard.luau").new(board)
+	local view = h:load("src/LServer/Queues/QueueBillboard.luau").new(board)
 	local state = { State = "Empty", Host = "-", Mode = "Choose a mode", Count = 0, Capacity = 4 }
 	view:Render(queue, state, h.time)
 	check(
@@ -661,7 +761,7 @@ do
 		"new sign reveals authored ancestors including nested icon"
 	)
 	check(
-		title.Text == "SHIFT AVAILABLE" and status.Text == "READY" and board.Gamemode.Text == "Story",
+		title.Text == "SHIFT AVAILABLE" and status.Text == "READY" and mode.Text == "Story",
 		"empty sign matches owner design wording"
 	)
 	check(
@@ -673,10 +773,16 @@ do
 	state.State, state.ExpiresAt = "Open", h.time + 19.2
 	view:Render(queue, state, h.time)
 	check(
-		title.Text == "BEAMO'S SHIFT" and board.Players.Text == "2/3" and icon.Image == "endless-image",
+		title.Text == "BEAMO'S SHIFT" and board.PlayerCount.Text == "2/3" and icon.Image == "endless-image",
 		"party host count capacity and selected icon update together"
 	)
 	check(status.Text == "STARTS 20s", "open timer rounds up from authoritative deadline")
+	check(mode.Visible and holder.Visible and icon.Visible, "nested Icon.Bar.Gamemode is fully revealed")
+	check(
+		not status.TextScaled and status.TextSize == 18 and status.TextWrapped,
+		"Status retains authored text sizing and wrapping"
+	)
+	check(iconStroke.Color == Roblox.Color3.fromRGB(58, 58, 58), "authored icon stroke remains unchanged")
 	state.State = "Countdown"
 	state.ExpiresAt = h.time + 4.2
 	view:Render(queue, state, h.time)
@@ -695,11 +801,17 @@ do
 	state.Host = "NewLeader"
 	view:Render(queue, state, h.time)
 	check(
-		title.Text == "NEWLEADER'S SHIFT" and not title.RichText and title.TextScaled,
-		"host changes use plain text fitted to existing title"
+		title.Text == "NEWLEADER'S SHIFT"
+			and not title.RichText
+			and not title.TextScaled
+			and title.TextSize == 24
+			and title.TextWrapped,
+		"host changes preserve authored title text sizing"
 	)
 	icon:Destroy()
-	icon = child(holder, "ImageButton", "GamemodeIcon")
+	icon = child(board, "ImageButton", "Icon")
+	holder = child(icon, "Frame", "Bar")
+	mode = child(holder, "TextLabel", "Gamemode")
 	icon.Image = "replacement-story"
 	view:Render(queue, state, h.time)
 	check(
@@ -712,197 +824,13 @@ do
 	state.State, state.Mode, state.Count = "Empty", "Choose a mode", 0
 	view:Render(queue, state, h.time)
 	check(
-		status.Text == "READY" and board.Gamemode.Text == "Story" and icon.Image == "replacement-story",
+		status.Text == "READY" and mode.Text == "Story" and icon.Image == "replacement-story",
 		"reset clears previous mode and departure status"
 	)
 	check(
 		title.Size == "original-size" and title.Position == "original-position",
 		"billboard updates preserve authored geometry"
 	)
-end
-
-do
-	local h = Harness.Environment()
-	h.env.TweenInfo = {
-		new = function(seconds, _, _, _, reverses)
-			return { Time = seconds, Reverses = reverses }
-		end,
-	}
-	h.env.Enum.EasingStyle, h.env.Enum.EasingDirection = { Quad = "Quad" }, { Out = "Out" }
-	local function child(parent, class, name)
-		local object = h.instance(class)
-		object.Name, object.Parent, object.Visible = name, parent, true
-		object.TextTransparency, object.ImageTransparency = 0.2, 0.3
-		object.Text, object.Image = "", ""
-		return object
-	end
-	local workspace = h.instance("Workspace")
-	local queues = child(workspace, "Folder", "Queues")
-	local queue = child(queues, "Folder", "Queue")
-	queue:SetAttribute("DPU_QueueState", "Empty")
-	local ui = child(queue, "Part", "UI")
-	local board = child(ui, "BillboardGui", "BillboardGui")
-	board.Enabled = true
-	local background = child(board, "Frame", "Background")
-	local title = child(board, "TextLabel", "Title")
-	title.Text = "SHIFT AVAILABLE"
-	local count = child(board, "TextLabel", "Players")
-	count.Text = "0/4"
-	local status = child(board, "TextLabel", "GreenStatus")
-	status.Text = "READY"
-	local mode = child(board, "TextLabel", "Gamemode")
-	mode.Text = "Story"
-	local icon = child(board, "ImageLabel", "GamemodeIcon")
-	icon.Image = "story"
-	local authoredScale = child(count, "UIScale", "AuthoredScale")
-	authoredScale.Scale = 0.9
-	title.Size, title.Position = "authored-size", "authored-position"
-	local tweens, reduced = {}, false
-	local service = {
-		Create = function(_, target, info, goals)
-			local tween = { Target = target, Goals = goals, Duration = info.Time, Reverses = info.Reverses }
-			tween.Completed = {
-				Connect = function(_, callback)
-					local connection = { Connected = true }
-					function connection:Disconnect()
-						self.Connected = false
-					end
-					tween.Connection, tween.Callback = connection, callback
-					return connection
-				end,
-			}
-			function tween:Play()
-				self.Played = true
-			end
-			function tween:Cancel()
-				self.Cancelled = true
-			end
-			function tween:Complete()
-				if not self.Cancelled then
-					for key, value in pairs(self.Goals) do
-						self.Target[key] = value
-					end
-				end
-				if self.Connection and self.Connection.Connected then
-					self.Callback()
-				end
-			end
-			table.insert(tweens, tween)
-			return tween
-		end,
-	}
-	local motion = h:load("src/LClient/QueueBillboardMotion.luau").new({
-		workspace = workspace,
-		tweens = service,
-		clock = function()
-			return h.time
-		end,
-		reduced = function()
-			return reduced
-		end,
-	})
-	motion:Tick()
-	check(#tweens == 0, "initial billboard replication does not animate every pad")
-	queue:SetAttribute("DPU_QueueState", "Configuring")
-	title.Text, count.Text, status.Text = "BEAMO'S SHIFT", "1/4", "SETUP 20s"
-	motion:Tick()
-	check(#tweens > 0 and title.TextTransparency > 0.2, "party entry fades new heading and starts motion")
-	check(
-		authoredScale.Scale == 0.9
-			and math.abs(motion.boards[board].Targets.Count.Tween.Goals.Scale - 0.9 * 1.1) < 0.0001
-			and motion.boards[board].Targets.Count.Tween.Reverses == true,
-		"count smoothly tweens up ten percent and reverses without snapping from its authored baseline"
-	)
-	check(
-		title.Size == "authored-size" and title.Position == "authored-position",
-		"animation never changes authored frame geometry"
-	)
-	local old = motion.boards[board].Targets.Count.Tween
-	count.Text = "2/4"
-	motion:Tick()
-	local latest = motion.boards[board].Targets.Count.Tween
-	old.Callback()
-	check(
-		old.Cancelled and latest ~= old and motion.boards[board].Targets.Count.Tween == latest,
-		"stale completion cannot reset newer join animation"
-	)
-	for _, tween in ipairs(tweens) do
-		tween:Complete()
-	end
-	check(
-		authoredScale.Scale == 0.9 and title.TextTransparency == 0.2,
-		"completed tweens restore exact authored scale and transparency"
-	)
-	queue:SetAttribute("DPU_QueueState", "Open")
-	status.Text = "STARTS 20s"
-	motion:Tick()
-	local before = #tweens
-	status.Text = "STARTS 19s"
-	motion:Tick()
-	check(#tweens == before, "ordinary gathering seconds stay steady")
-	title.Text = "NEW HOST'S SHIFT"
-	motion:Tick()
-	check(#tweens > before, "host migration animates the new title")
-	queue:SetAttribute("DPU_QueueState", "Countdown")
-	status.Text = "LEAVING 5s"
-	motion:Tick()
-	before = #tweens
-	status.Text = "LEAVING 4s"
-	motion:Tick()
-	check(
-		#tweens == before + 1 and tweens[#tweens].Duration * 2 == 0.18 and tweens[#tweens].Reverses == true,
-		"final countdown adds one brief status pulse per second"
-	)
-	before = #tweens
-	status.Text = "LEAVING 0s"
-	motion:Tick()
-	check(#tweens == before, "zero does not loop a countdown pulse")
-	reduced = true
-	motion:Tick()
-	check(
-		authoredScale.Scale == 0.9 and title.TextTransparency == 0.2,
-		"enabling reduced motion cancels and restores in-flight effects"
-	)
-	before = #tweens
-	queue:SetAttribute("DPU_QueueState", "Empty")
-	title.Text, count.Text, status.Text = "SHIFT AVAILABLE", "0/4", "READY"
-	motion:Tick()
-	check(#tweens == before, "reduced setting suppresses party transition effects")
-	reduced = false
-	motion:Tick()
-	check(#tweens == before, "re-enabling effects does not replay skipped transitions")
-	icon:Destroy()
-	local replacement = child(board, "ImageLabel", "GamemodeIcon")
-	replacement.Image = "new-art"
-	motion:Tick()
-	check(
-		motion.boards[board].Targets.Icon.Object == replacement,
-		"replaced icon is rebound without stale target"
-	)
-	mode.Text, replacement.Image = "Endless", "endless-art"
-	motion:Tick()
-	check(replacement.ImageTransparency > 0.3, "confirmed mode art change fades in locally")
-	mode.Parent = replacement
-	mode.Text, replacement.Image = "Story", "story-art"
-	motion:Tick()
-	check(
-		motion.boards[board].Targets.Icon.Tween.Goals.Scale == 1
-			and motion.boards[board].Targets.Mode.Tween.Goals.Scale == 0.9,
-		"nested icon and label never compound their ten-percent resize"
-	)
-	queue:SetAttribute("DisableQueueMotion", true)
-	motion:Tick()
-	check(replacement.ImageTransparency == 0.3, "per-pad disable restores icon alpha")
-	queue.Parent = nil
-	h.time += 2
-	motion:Tick()
-	check(
-		not motion.boards[board] and not title:FindFirstChild("DPU_QueueMotion"),
-		"streamed-out pad releases owned scales and binding"
-	)
-	check(authoredScale.Parent == count and authoredScale.Scale == 0.9, "cleanup preserves authored UIScale")
-	motion:Destroy()
-	check(background:FindFirstChild("DPU_QueueMotion") == nil, "cleanup removes background animation helper")
 end
 
 print(string.format("PASS: %d world queue, mode selection, and authored UI checks.", total))

@@ -71,10 +71,7 @@ end)
 check(b ~= nil and h.time - before >= Config.LeaseSeconds, "new owner waits full lease")
 check(b.Data.Stats.CasesSolved == 12, "takeover preserves data")
 local ok, reason = store:Write(1, a, a.Data, true, "stale-release", h.time + 20)
-check(
-	not ok and reason == "OwnershipLost" and records[1].Lease.Token == "game",
-	"stale owner cannot save or release"
-)
+check(not ok and reason == "OwnershipLost" and records[1].Lease.Token == "game", "stale owner cannot save or release")
 responseLost = true
 check(store:Write(1, b, b.Data, true, "release-game", h.time + 20), "ambiguous release retries idempotently")
 check(records[1].Lease == nil, "release clears lease")
@@ -82,10 +79,7 @@ records[2] = { Format = 1, Data = { Version = 900 } }
 local missing, why = store:Acquire(2, "bad", function()
 	return false
 end)
-check(
-	missing == nil and why == "InvalidData" and records[2].Data.Version == 900,
-	"future data remains untouched"
-)
+check(missing == nil and why == "InvalidData" and records[2].Data.Version == 900, "future data remains untouched")
 failures = 2
 local retry = store:Acquire(3, "retry", function()
 	return false
@@ -107,17 +101,13 @@ local cancelResult = store:Acquire(5, "cancelled", function()
 end)
 check(cancelResult == nil and records[5] == nil, "departure before acquire does not create profile")
 updateHook = nil
-records[6] =
-	{ Format = 1, Data = Schema.Default(), Lease = { Token = "cancelled-owner", Expires = h.time + 180 } }
+records[6] = { Format = 1, Data = Schema.Default(), Lease = { Token = "cancelled-owner", Expires = h.time + 180 } }
 records[6].Data.Stats.CasesSolved = 99
 check(store:Abandon(6, "cancelled-owner"), "abandon succeeds")
 check(records[6].Data.Stats.CasesSolved == 99 and records[6].Lease == nil, "abandon preserves original data")
-check(
-	store:Abandon(3, "wrong-owner") and records[3].Lease.Token == "retry",
-	"abandon does not unlock someone else"
-)
+check(store:Abandon(3, "wrong-owner") and records[3].Lease.Token == "retry", "abandon does not unlock someone else")
 
-local Party = h:load("src/LServer/PartyService.luau")
+local Party = h:load("src/LServer/Parties/PartyService.luau")
 local host, friend, stranger = h:player(10), h:player(11), h:player(12)
 local ready, friendship = {}, true
 local friendshipHook
@@ -171,10 +161,7 @@ party:Tick()
 h:drain()
 check(travelCount == 1 and party:Get(host).State == "Teleporting", "countdown dispatches exactly once")
 check(not party:Remove(friend, false), "cannot voluntarily change dispatched roster")
-check(
-	party:Remove(host, true) and party:Get(friend).HostUserId == friend.UserId,
-	"departed host transfers leadership"
-)
+check(party:Remove(host, true) and party:Get(friend).HostUserId == friend.UserId, "departed host transfers leadership")
 party:Remove(friend, true)
 check(next(party.parties) == nil, "empty party cleaned up")
 party = Party.new(deps)
@@ -247,10 +234,28 @@ h.time += 0.5
 check(limiter:Take(host) and not limiter:Take(host), "request budget replenishes at bounded rate")
 
 for _, name in ipairs(fs.readDir(root)) do
-	check(
-		fs.readFile(root .. name) == fs.readFile("src/GServer/Core/" .. name),
-		"identical cross-place Core " .. name
-	)
+	check(fs.readFile(root .. name) == fs.readFile("src/GServer/Core/" .. name), "identical cross-place Core " .. name)
 end
+-- Every static Roblox require must resolve after moving modules, including bootstraps.
+local function references(folder)
+	for _, name in ipairs(fs.readDir(folder)) do
+		local path = folder .. "/" .. name
+		if fs.isDir(path) then
+			references(path)
+		elseif name:match("%.luau$") then
+			for expression in fs.readFile(path):gmatch("require%(([%w_%.]+)%)") do
+				local base, rest = expression:match("^(%w+)%.(.+)$")
+				if base == "script" or base == "root" then
+					local target = base == "script" and path:gsub("%.luau$", "") or folder
+					for segment in rest:gmatch("[^%.]+") do
+						target = segment == "Parent" and target:match("^(.*)/[^/]+$") or target .. "/" .. segment
+					end
+					check(fs.isFile(target .. ".luau"), path .. " unresolved import " .. expression)
+				end
+			end
+		end
+	end
+end
+references("src")
 local compiled = Harness.Compile("src") + Harness.Compile("tests")
 print(string.format("PASS: %d regression checks; %d Luau files compiled.", total, compiled))

@@ -7,20 +7,8 @@ assert(
 	"LClient must sync into StarterPlayerScripts"
 )
 local playerGui = player:WaitForChild("PlayerGui")
-local View = require(script.Parent.QueueView)
-local Requests = require(script.Parent.QueueRequests)
-local BillboardMotion = require(script.Parent.QueueBillboardMotion)
-local billboardMotion = BillboardMotion.new({
-	workspace = workspace,
-	tweens = game:GetService("TweenService"),
-	clock = os.clock,
-	reduced = function()
-		local data = player:FindFirstChild("PlayerData")
-		local settings = data and data:FindFirstChild("Settings")
-		local reduced = settings and settings:FindFirstChild("ReducedFlashes")
-		return reduced ~= nil and reduced.Value == true
-	end,
-})
+local View = require(script.Parent.UI.QueueView)
+local Requests = require(script.Parent.Networking.QueueRequests)
 local state = { Active = false, Revision = -1 }
 local view, request, busy = nil, nil, nil
 local changedConnection
@@ -102,7 +90,6 @@ end)
 -- Rebind after ScreenGui replacement/respawn and support late replication of authored descendants.
 task.spawn(function()
 	while script.Parent do
-		billboardMotion:Tick()
 		requests:Tick()
 		local gui = playerGui:FindFirstChild("Queue")
 		if view and (view.gui ~= gui or not view:IsValid()) then
@@ -138,7 +125,6 @@ task.spawn(function()
 		view:Destroy()
 	end
 	requests:Destroy()
-	billboardMotion:Destroy()
 	if changedConnection then
 		changedConnection:Disconnect()
 	end

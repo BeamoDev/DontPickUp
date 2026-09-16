@@ -44,7 +44,7 @@ data = require(root.Core.DataService).new(services, Config)
 local tickets = require(root.Core.TicketStore).new(services, Config)
 travel = require(root.Core.TravelService).new(services, Config, data, tickets)
 network = require(root.Core.Network).new(services, "Lobby")
-party = require(root.PartyService).new({
+party = require(root.Parties.PartyService).new({
 	config = Config,
 	clock = function()
 		return workspace:GetServerTimeNow()
@@ -77,7 +77,7 @@ party = require(root.PartyService).new({
 		return travel:Begin(roster, "Game", cancelled, finished, options)
 	end,
 })
-world = require(root.QueueWorld).new(services, Config, data, party, network)
+world = require(root.Queues.QueueWorld).new(services, Config, data, party, network)
 require(root.Runtime).Set({ Data = data, Party = party, Travel = travel, Queues = world.queues })
 
 network:Bind(function(player, action, payload)

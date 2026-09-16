@@ -427,7 +427,7 @@ do
 		},
 		ReplicatedStorage = h.instance("ReplicatedStorage"),
 	}
-	local session = h:load("src/GServer/GameSession.luau").new(s, Config, {
+	local session = h:load("src/GServer/Services/GameSession.luau").new(s, Config, {
 		IsReady = function()
 			return true
 		end,
@@ -447,7 +447,7 @@ do
 		"departure after admission preserves the remaining party's run"
 	)
 	check(not session:Admit(b), "departed players cannot rejoin a running admission")
-	local second = h:load("src/GServer/GameSession.luau").new(
+	local second = h:load("src/GServer/Services/GameSession.luau").new(
 		{
 			Players = h.players,
 			RunService = s.RunService,
@@ -600,7 +600,7 @@ for count = 1, 4 do
 		for _, player in ipairs(players) do
 			members[tostring(player.UserId)] = {}
 		end
-		local session = h:load("src/GServer/GameSession.luau").new(
+		local session = h:load("src/GServer/Services/GameSession.luau").new(
 			{
 				Players = h.players,
 				RunService = f.source.RunService,

@@ -1,12 +1,14 @@
 # Lobby walk-in queues
 
+Current folder deployment and latest controls are defined in [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md). Preserve the new subfolders when syncing; older flat sibling descriptions in this historical integration detail are superseded.
+
 ## Sync and authored hierarchy
 
 Sync the updated **LServer**, **LClient**, and **GServer** roots together. Lobby place: `110554757455252`; Game place: `111652489432168`.
 
 - Lobby `LServer` belongs inside `ServerScriptService`, retaining its module subtree.
 - Include `QueueBillboard.luau` as a sibling ModuleScript of `QueueWorld.luau`; it binds the updated world sign.
-- Lobby `LClient` belongs inside `StarterPlayer.StarterPlayerScripts`. `QueueController.local.luau` is a LocalScript; `QueueView.luau`, `QueueRequests.luau`, and `QueueBillboardMotion.luau` are sibling ModuleScripts. Sync all four together with the updated Lobby server.
+- Lobby `LClient` belongs inside `StarterPlayer.StarterPlayerScripts`. `QueueController.local.luau` is a LocalScript; `UI/QueueView.luau` and `Networking/QueueRequests.luau` are ModuleScripts under the same client root. Sync all three together with the updated Lobby server.
 - Game `GServer` contains the matching Core and GameSession changes that preserve the selected mode during admission.
 - The client uses the replicated copy of your authored `StarterGui.Queue`, at `PlayerGui.Queue`. No replacement ScreenGui or physical queue model is generated.
 
@@ -38,7 +40,7 @@ The exact selected-marker name in the screenshot is `Selected`; lowercase `selec
 
 Selecting a mode makes its marker visible and sets its stroke to **RGB 4, 255, 0**. The other mode's marker is hidden and its stroke becomes **RGB 58, 58, 58**. Story is the initial default. All buttons bind through `Activated` for mouse/touch/controller activation. [Roblox button events](https://create.roblox.com/docs/ui/buttons)
 
-The controller reveals the ScreenGui, Party, scrolling frame, and required ancestor chains when opening. It preserves authored positions, sizes, images, and text styling. It rebinds when the ScreenGui is replaced on respawn. Lower/Raise change only the displayed capacity, clamped to 1-4. Mode-specific gameplay is still future work.
+The controller reveals the ScreenGui, Party, scrolling frame, and required ancestor chains when opening. It preserves authored positions, sizes, images, and text styling. It rebinds when the ScreenGui is replaced on respawn. Lower/Raise change only the displayed capacity, clamped to 1-4. Both Story and Endless are implemented in the Game place.
 
 `Queue.Status`, if authored, displays party count, departure time, preparation, and short notifications. If absent, the client creates a small `DPU_Status` label at the lower center, using Expire's font. Author `Status` to control its position and appearance. Existing controls are not moved. ImageButtons can use a child `Title` TextLabel for button wording. Leaving displays `Leaving...`; preparation and dispatch display different messages. Entry rejection and Studio completion remain visible even with Party hidden.
 
@@ -56,16 +58,22 @@ Workspace.Queues
     UI (BasePart or container)
       BillboardGui
         Background
-        GamemodeIcon
-        Gamemode
-        Title
-        Players
-        GreenStatus
+        Icon (ImageLabel or ImageButton)
+          UIAspectRatioConstraint
+          UICorner
+          UIStroke
+          Bar (Frame)
+            Gamemode (TextLabel)
+        Status (TextLabel)
+        PlayerCount (TextLabel)
+        Title (TextLabel)
 ```
 
 Refs and UI can also be nested inside that Queue's authored Model: direct children are preferred, then a search scoped to the queue is used. Each pad gets a unique `DPU_QueueId` attribute even if every pad is named Queue. Missing refs produce a warning and leave that pad unbound until corrected. Late/replaced boards are rebound.
 
-`Enter` is the entry box. A server check runs four times per second and tests the live character root against its oriented bounds, with a one-stud horizontal margin and four-stud vertical margin for floor markers. It does not require CanTouch or CanQuery. Configure its size/position to cover only the intended entrance.
+`Enter` is the entry box. The server enables `CanTouch` and binds `Touched` at startup: valid character contact immediately runs admission, places the player, and updates the sign without waiting for a maintenance tick. Readiness, capacity, live-character proximity, and leave protection still apply. Repeated limb contacts cannot duplicate membership. Touch listeners disconnect when pads are removed or the server closes. [Roblox touch events](https://create.roblox.com/docs/reference/engine/classes/BasePart#Touched)
+
+The four-times-per-second bounds check remains a fallback for missed contacts, scripted movement, and avatars whose collision settings suppress touch events. Both paths check the live character root against the oriented box, with a one-stud horizontal margin and four-stud vertical margin for floor markers. The fallback does not require CanTouch or CanQuery. Configure the box to cover the intended entrance; normal network replication latency still applies. Failed admission retries remain bounded to twice per second.
 
 `EnterPos` and `ExitPos` are ground-level placement markers. The server adds avatar root/hip clearance and moves the character there. Each member holds a stable slot; replacements use the first vacant slot without moving existing members. Both entry and exit use these offsets, with the first member on the marker and remaining slots spaced three studs apart behind it. Keep a clear area around both markers; actual avatar collisions, model dimensions, and placement need a Studio playtest.
 
@@ -81,9 +89,9 @@ Refs and UI can also be nested inside that Queue's authored Model: direct childr
 
 Host departure transfers leadership to the oldest remaining member. Death, disconnect, setup expiry, walking more than 35 studs from EnterPos, or deleting a pad cleans up its physical membership. Walking away releases membership in place rather than pulling the player back to ExitPos. Create and Leave publish their completed physical state so setup does not flash back open while leaving. A transfer failure releases the remaining pad members so they can regroup. Server profile freeze/ownership rules remain enforced.
 
-`QueueBillboard` binds the updated `GamemodeIcon`, `Gamemode`, `Title`, `Players`, and `GreenStatus` names. `Players` shows the actual count/capacity, such as `2/3`. Empty signs display Story; a created party displays its confirmed mode. The title is `SHIFT AVAILABLE` when empty and `<HOST>'S SHIFT` when occupied, including after leadership changes.
+`QueueBillboard` binds `Icon`, nested `Icon.Bar.Gamemode`, `Title`, `PlayerCount`, and `Status`. Sync **LServer/Queues/QueueBillboard** and **LClient/QueueController** together for this hierarchy. `PlayerCount` shows the actual count/capacity, such as `2/3`. Empty signs display Story; a created party displays its confirmed mode. The title is `SHIFT AVAILABLE` when empty and `<HOST>'S SHIFT` when occupied, including after leadership changes.
 
-| Queue state | GreenStatus | Accent |
+| Queue state | Status | Accent |
 | --- | --- | --- |
 | Empty | `READY` | Green |
 | Host choosing | `SETUP 20s` | Amber |
@@ -92,29 +100,17 @@ Host departure transfers leadership to the oldest remaining member. Death, disco
 | Saving/reserving | `PREPARING` | Amber |
 | Transfer dispatched | `TELEPORTING` | Green |
 
-Times come from the existing server deadlines, round up, and never become negative. The status text and an existing Background UIStroke (or direct BillboardGui UIStroke) share the accent. Fonts, images, size, and position remain authored; Title/GreenStatus use single-line text scaling to fit longer wording. Hidden ancestor frames are revealed. Older `MapIcon`, `PartyLeader`, and `Time` names remain fallback bindings for pads that have not been updated.
+Times come from the existing server deadlines, round up, and never become negative. The status text and an existing Background UIStroke (or direct BillboardGui UIStroke) share the accent. Fonts, images, size, and position remain authored; TextSize, TextScaled, TextWrapped, and UIScale stay exactly as authored. Hidden ancestor frames are revealed. Older `GamemodeIcon`/`MapIcon`, `Players`, `GreenStatus`/`Time`, and `PartyLeader` names remain fallback bindings for pads that have not been updated.
 
 Optional string attributes `StoryIcon` and `EndlessIcon` on the **Queue folder/model** provide mode image IDs, for example `rbxassetid://123456789`. Without a nonempty override the actual icon's authored image is retained. Both ImageLabel and ImageButton icons work. Replaced icons and labels rebind within the same board; replacing the whole BillboardGui is discovered too. No art or world model is generated.
 
 `InQueue` receives only this system's `DPU_<UserId>` ObjectValues pointing at members, plus a Count attribute. Other authored children are preserved. Queue state is exposed as `DPU_QueueState` on the queue and `DPU_WorldQueueId` on the player.
 
-## Billboard motion
+## Authored label sizing
 
-`QueueBillboardMotion` adds local 0.18-0.28 second effects to the existing world sign:
+Queue sign animations have been removed. Text, images, status colors, and visibility update directly; scripts do not change label Size, Position, UIScale, TextSize, TextScaled, or TextWrapped. Configure text fit in Studio.
 
-- Queue phase changes, including becoming empty: a soft background settle and title/status fade-in.
-- Player count changes: a small number pulse, including joins and departures.
-- Host changes: a brief title fade-in.
-- Confirmed mode/art changes: a small icon and mode-label fade-in.
-- Final countdown: a gentle status pulse for seconds 5 through 1. Gathering seconds and idle signs do not loop animations.
-
-The server still owns text, color, visibility, membership, and timers. Effects only tween local scale and text/image transparency. Authored sizes, positions, corners, aspect constraints, and existing UIScale baselines are preserved. Rapid changes cancel old tweens before starting new ones; callbacks from cancelled tweens cannot reset newer effects.
-
-Size pulses tween to **90% or 110%** of the original authored scale, then reverse to **100%**. Never replace the current scaled `Size` with pixel offsets or accumulate changes from a previous pulse. Wrappers containing animated labels stay at their baseline so nested scale effects cannot exceed the 10% limit. Completion, cancellation and cleanup restore the original UIScale exactly.
-
-The module uses QueueController's existing quarter-second update and discovers replaced/streamed boards once per second; it adds no animation remotes or per-frame scan. First replication establishes a baseline rather than animating every sign. Cleanup restores original alpha/scale and removes only owned UIScale helpers.
-
-`PlayerData.Settings.ReducedFlashes = true` suppresses these effects. Set the optional boolean `DisableQueueMotion = true` attribute on an individual Queue folder/model to disable that sign. Disabling while a tween is active restores its authored appearance immediately on the next update.
+Sync the updated **LClient/QueueController** and **LServer/Queues/QueueBillboard**, then restart Play. The retired QueueBillboardMotion ModuleScript is no longer required and can be removed from Studio if sync leaves it behind.
 
 ## Studio teleport preview
 
@@ -149,6 +145,6 @@ The existing generic Join endpoint rejects physical-pad parties. Generic Leave/R
 
 ## Verification
 
-`tests/Queues.luau` uses authored hierarchy fixtures and real Lune vector/CFrame math to test pad lifecycle, rotated entry bounds, board/member updates, mode colors/markers, capacity bounds, exit behavior, death cleanup, and UI connection cleanup. `tests/Runtime.luau` verifies that the Studio preview exercises save/freeze/thaw without calling reservation, admission-write, or teleport APIs. Run all five suites from README after changes.
+`tests/Queues.luau` uses authored hierarchy fixtures and real Lune vector/CFrame math to test pad lifecycle, rotated entry bounds, board/member updates, mode colors/markers, capacity bounds, exit behavior, death cleanup, and UI connection cleanup. `tests/Runtime.luau` verifies that the Studio preview exercises save/freeze/thaw without calling reservation, admission-write, or teleport APIs. Run all six suites from README after changes.
 
 Still test in Studio: actual UI visibility/overlap and input, both modes, entering/exiting every pad, avatar clearance at markers, a two-client party, death/respawn, and a full countdown's Output. No screenshot-provided model or UI was rendered or inspected live during this source implementation.

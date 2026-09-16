@@ -98,8 +98,7 @@ function Harness.Environment()
 			return false
 		end
 		function methods:GetFullName()
-			return properties.Parent and properties.Parent:GetFullName() .. "." .. properties.Name
-				or properties.Name
+			return properties.Parent and properties.Parent:GetFullName() .. "." .. properties.Name or properties.Name
 		end
 		function methods:Clone()
 			local copy = newInstance(class)
@@ -239,15 +238,17 @@ function Harness.Environment()
 		return player
 	end
 	function h:load(path, overrides)
-		local parentPath = path:match("^(.*)/[^/]+$")
-		local parent = setmetatable({}, {
-			__index = function(_, key)
-				return parentPath .. "/" .. key .. ".luau"
-			end,
-		})
+		local function node(location)
+			return setmetatable({ Path = location }, {
+				__index = function(_, key)
+					return node(key == "Parent" and location:match("^(.*)/[^/]+$") or location .. "/" .. key)
+				end,
+			})
+		end
 		local env = table.clone(self.env)
-		env.script = { Parent = parent }
+		env.script = node(path:gsub("%.luau$", ""))
 		env.require = function(module)
+			module = type(module) == "table" and module.Path .. ".luau" or module
 			if overrides and overrides[module] then
 				return overrides[module]
 			end

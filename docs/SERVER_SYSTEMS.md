@@ -1,5 +1,7 @@
 # Server systems and integration
 
+Current folder deployment and latest controls are defined in [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md). Preserve the new subfolders when syncing; older flat sibling descriptions in this historical integration detail are superseded.
+
 ## Scope
 
 Implemented: parties within one Lobby server, friends-only/public admission, ready checks, host countdown, reserved-server group teleports, retries, destination admission, party arrival gating, player profiles, settings, progress APIs, autosave, departure saves, and shutdown cleanup.
@@ -27,17 +29,16 @@ No remotes or player folders need to be manually authored. Existing client/share
 | Module | Responsibility |
 | --- | --- |
 | `LServer/Bootstrap.server.luau` | Lobby lifecycle, request routing, one-second service scheduling |
-| `LServer/PartyService.luau` | Party roster, permissions, ready state, countdown, recovery |
-| `LServer/WorldQueueService.luau`, `QueueWorld.luau`, `QueueGeometry.luau` | Physical pad reservations, entry/exit, gathering, board and member views |
-| `LServer/QueueBillboard.luau` | Authored world sign: mode icon, host title, player count, green/amber status, legacy name fallbacks |
+| `LServer/Parties/PartyService.luau` | Party roster, permissions, ready state, countdown, recovery |
+| `LServer/Queues/WorldQueueService.luau`, `QueueWorld.luau`, `QueueGeometry.luau` | Physical pad reservations, entry/exit, gathering, board and member views |
+| `LServer/Queues/QueueBillboard.luau` | Authored world sign: mode icon, host title, player count, green/amber status, legacy name fallbacks |
 | `LClient/QueueController.local.luau`, `QueueView.luau`, `QueueRequests.luau` | Authored UI/status binding, mode/capacity draft, scoped Create/Leave requests, timeout ownership, respawn rebinding |
-| `LClient/QueueBillboardMotion.luau` | Local world-sign transitions, cancellable tweens, authored scale/alpha restoration, reduced-effects support |
 | `GServer/Bootstrap.server.luau` | Admission before profile loading, Game lifecycle, return-to-Lobby request |
-| `GServer/GameSession.luau` | Expected party, loaded members, all-member start gate |
-| `GServer/GamePrototype.luau`, `ShiftService.luau`, `PrototypeWorld.luau`, `PrototypeConfig.luau` | Playable introductory night, generated shop, server interactions, hazards, results, profile integration |
+| `GServer/Services/GameSession.luau` | Expected party, loaded members, all-member start gate |
+| `GServer/Services/GamePrototype.luau`, `ShiftService.luau`, `PrototypeWorld.luau`, `PrototypeConfig.luau` | Playable introductory night, generated shop, server interactions, hazards, results, profile integration |
 | `GClient/PrototypeController.local.luau`, `PrototypeView.luau` | Game tutorial/HUD, vote/results interface, objective highlight, spectator camera |
-| `GServer/RepairTemplates.luau`, `GClient/RepairPresentation.luau` | Reusable phone template, local component highlights/progress, interruptible camera close-ups |
-| `GServer/Workshop.luau`, `CustomerCatalog.luau` | Physical repair chair and carried parts; 270 server-only customers, variable service requirements and chapter clues |
+| `GServer/Repair/RepairTemplates.luau`, `GClient/Repair/RepairPresentation.luau` | Reusable phone template, local component highlights/progress, interruptible camera close-ups |
+| `GServer/Repair/Workshop.luau`, `CustomerCatalog.luau` | Physical repair chair and carried parts; 270 server-only customers, variable service requirements and chapter clues |
 | Each `Runtime.luau` | References for other server modules after startup |
 | `Core/Config.luau` | Place IDs, limits, storage names, Studio settings |
 | `Core/ProfileSchema.luau` | Defaults, strict known-field validation, future migration entry point |
@@ -174,7 +175,7 @@ local ok, code = runtime.Data:RecordOutcome(player, {
 
 `Data:Get(player)` returns a copy, never the live profile. Other APIs are `UnlockEvidence(player, id)`, `CompleteTutorial(player)`, `SetSetting(player, key, value)`, and `Save(player, false)` if a real milestone needs an immediate durability check. A mutation API returning true means accepted in memory; autosave/departure save persists it. Check the explicit Save result when immediate durability is required. Do not call Data:Save with release=true from gameplay; lifecycle owns release.
 
-Outcome IDs prevent repeated grants within the latest 100 outcomes. This bounded run-history protection is not a permanent payment receipt ledger. A future run service must settle each run once and must not replay evicted outcomes. No gameplay system currently awards outcomes automatically.
+Outcome IDs prevent repeated grants within the latest 100 outcomes. This bounded run-history protection is not a permanent payment receipt ledger. A future run service must settle each run once and must not replay evicted outcomes. Shift settlement awards outcomes through this API.
 
 ### Storage guarantees and limits
 
@@ -189,7 +190,7 @@ Outcome IDs prevent repeated grants within the latest 100 outcomes. This bounded
 
 ## Verification
 
-Run all five Lune suites and the Core parity check in `README.md`. Tests compile every Luau file, use mocked Roblox instances/services and authored/generated hierarchy fixtures, and use a cooperative scheduler for coroutine interleavings in save/load/shutdown scenarios. They are local evidence, not a live Roblox certification.
+Run all six Lune suites and the Core parity check in `README.md`. Tests compile every Luau file, use mocked Roblox instances/services and authored/generated hierarchy fixtures, and use a cooperative scheduler for coroutine interleavings in save/load/shutdown scenarios. They are local evidence, not a live Roblox certification.
 
 Published checks still required:
 

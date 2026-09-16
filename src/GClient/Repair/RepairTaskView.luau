@@ -1,0 +1,502 @@
+-- Pooled task surfaces; drag previews are local and send one discrete move on release.
+local Extra = require(script.Parent.BenchTaskView)
+local View = {}
+View.__index = View
+local ACCENT, WHITE, BLACK = Color3.fromRGB(220, 213, 200), Color3.fromRGB(235, 235, 235), Color3.new(0, 0, 0)
+local KINDS = { Probes = true, BatteryFit = true, Wires = true, Circuit = true, Dials = true, Memory = true }
+local NAMES = { "BATTERY", "SPEAKER", "KEYPAD" }
+local MARKS = { "A / +", "B / -", "C / +" }
+local COLORS = { Color3.fromRGB(240, 140, 105), Color3.fromRGB(125, 185, 245), Color3.fromRGB(225, 205, 115) }
+local function make(class, parent, props)
+	local object = Instance.new(class)
+	for key, value in pairs(props) do
+		object[key] = value
+	end
+	object.Parent = parent
+	return object
+end
+function View.Supports(puzzle)
+	return puzzle and (KINDS[puzzle.Kind] == true or Extra.Supports(puzzle))
+end
+function View.new(parent, send, deps)
+	local self = setmetatable({
+		send = send,
+		d = deps or {},
+		connections = {},
+		buttons = {},
+		arms = {},
+		lines = {},
+		dials = {},
+		needles = {},
+		dialLabels = {},
+	}, View)
+	self.root = make("Frame", parent, {
+		Name = "TaskSurface",
+		Position = UDim2.fromOffset(10, 94),
+		Size = UDim2.new(1, -20, 1, -104),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 13,
+	})
+	for i = 1, 12 do
+		local button = make("TextButton", self.root, {
+			Name = "Control" .. i,
+			Text = "",
+			TextSize = 14,
+			TextWrapped = true,
+			Font = Enum.Font.Code,
+			TextColor3 = WHITE,
+			BackgroundColor3 = BLACK,
+			BackgroundTransparency = 0.5,
+			BorderSizePixel = 0,
+			ZIndex = 15,
+		})
+		make("UIStroke", button, { Color = Color3.fromRGB(110, 110, 110), Transparency = 0.5, Thickness = 1 })
+		self.buttons[i], self.arms[i] = button, {}
+		if i <= 3 then
+			local dial = make("Frame", button, {
+				Name = "Dial",
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(46, 46),
+				BackgroundColor3 = BLACK,
+				BackgroundTransparency = 0.5,
+				BorderSizePixel = 0,
+				Visible = false,
+				ZIndex = 16,
+			})
+			make("UICorner", dial, { CornerRadius = UDim.new(1, 0) })
+			make("UIStroke", dial, { Color = WHITE, Thickness = 1, Transparency = 0.5 })
+			self.dials[i] = dial
+			local rotor = make("Frame", dial, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 17 })
+			make("Frame", rotor, {
+				AnchorPoint = Vector2.new(0.5, 1),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(3, 18),
+				BackgroundColor3 = ACCENT,
+				BorderSizePixel = 0,
+				ZIndex = 17,
+			})
+			self.needles[i] = rotor
+			self.dialLabels[i] = make("TextLabel", dial, {
+				Position = UDim2.new(0.5, -55, 0, -22),
+				Size = UDim2.fromOffset(110, 20),
+				BackgroundTransparency = 1,
+				Font = Enum.Font.Code,
+				TextSize = 13,
+				TextColor3 = WHITE,
+				ZIndex = 17,
+			})
+		end
+		for direction = 0, 3 do
+			local positions = {
+				UDim2.fromScale(0.45, 0),
+				UDim2.fromScale(0.5, 0.45),
+				UDim2.fromScale(0.45, 0.5),
+				UDim2.fromScale(0, 0.45),
+			}
+			self.arms[i][direction + 1] = make("Frame", button, {
+				Name = "Trace" .. direction,
+				BackgroundColor3 = ACCENT,
+				BorderSizePixel = 0,
+				Size = direction % 2 == 0 and UDim2.fromScale(0.1, 0.5) or UDim2.fromScale(0.5, 0.1),
+				Position = positions[direction + 1],
+				Visible = false,
+				ZIndex = 16,
+			})
+		end
+		table.insert(
+			self.connections,
+			button.Activated:Connect(function()
+				self:Activate(i)
+			end)
+		)
+		if self.d.input then
+			table.insert(
+				self.connections,
+				button.InputBegan:Connect(function(input)
+					self:BeginDrag(i, input)
+				end)
+			)
+		end
+	end
+	for i = 1, 3 do
+		self.lines[i] = make("Frame", self.root, {
+			Name = "Wire" .. i,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = COLORS[i],
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 14,
+		})
+	end
+	self.check = make("TextButton", self.root, {
+		Name = "Check",
+		Text = "TEST",
+		Position = UDim2.new(0, 0, 1, -44),
+		Size = UDim2.new(1, 0, 0, 44),
+		BackgroundColor3 = BLACK,
+		BackgroundTransparency = 0.5,
+		TextColor3 = ACCENT,
+		TextSize = 15,
+		Font = Enum.Font.Code,
+		BorderSizePixel = 0,
+		ZIndex = 15,
+	})
+	table.insert(
+		self.connections,
+		self.check.Activated:Connect(function()
+			if
+				self.work
+				and (self.work.Puzzle.Kind == "Memory" or self.work.Puzzle.Kind == "Speaker")
+				and workspace:GetServerTimeNow() < self.work.Puzzle.RevealUntil
+			then
+				return
+			end
+			self:Submit(7)
+		end)
+	)
+	self.ghost = make("TextLabel", self.root, {
+		Name = "DraggedItem",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(82, 44),
+		BackgroundColor3 = BLACK,
+		BackgroundTransparency = 0.5,
+		TextColor3 = ACCENT,
+		TextSize = 16,
+		Font = Enum.Font.Code,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 20,
+	})
+	self.extra = Extra.new(self.root)
+	if self.d.input then
+		table.insert(
+			self.connections,
+			self.d.input.InputChanged:Connect(function(input)
+				self:MoveDrag(input)
+			end)
+		)
+		table.insert(
+			self.connections,
+			self.d.input.InputEnded:Connect(function(input)
+				self:EndDrag(input)
+			end)
+		)
+		if self.d.input.WindowFocusReleased then
+			table.insert(
+				self.connections,
+				self.d.input.WindowFocusReleased:Connect(function()
+					self:CancelDrag()
+					self.key = nil
+					self:Render()
+				end)
+			)
+		end
+	end
+	return self
+end
+function View:CancelDrag()
+	self.drag, self.selected = nil, nil
+	self.ghost.Visible = false
+end
+function View:Submit(move, token)
+	local work = self.work
+	if not self.root.Visible or self.busy or not work or not work.Puzzle then
+		return
+	end
+	if token and (token.Id ~= work.Id or token.Revision ~= work.Puzzle.Revision) then
+		return
+	end
+	self:CancelDrag()
+	self.send(
+		"PuzzleInput",
+		{ WorkId = work.Id, OrderId = work.OrderId, Move = move, PuzzleRevision = work.Puzzle.Revision }
+	)
+end
+function View:Activate(i)
+	if
+		self.busy
+		or not self.root.Visible
+		or not self.buttons[i].Visible
+		or not self.buttons[i].Active
+		or os.clock() < (self.ignoreClickUntil or 0)
+	then
+		return
+	end
+	local puzzle = self.work.Puzzle
+	if (puzzle.Kind == "Memory" or puzzle.Kind == "Speaker") and workspace:GetServerTimeNow() < puzzle.RevealUntil then
+		return
+	end
+	if puzzle.Kind == "Wires" or puzzle.Kind == "BatteryFit" or Extra.Pair(puzzle) then
+		if i <= 3 and self.buttons[i].Visible and (not puzzle.Placed or not puzzle.Placed[i]) then
+			self.selected = i
+			self.key = nil
+			self:Render()
+		elseif i > 3 and i <= 6 and self.buttons[i].Visible and self.selected then
+			self:Submit(self.selected * 10 + i - 3)
+		end
+	else
+		self:Submit(i)
+	end
+end
+function View:BeginDrag(i, input)
+	if not self.root.Visible or self.busy or i > 3 or self.drag then
+		return
+	end
+	local puzzle = self.work.Puzzle
+	if
+		(puzzle.Kind ~= "Wires" and puzzle.Kind ~= "BatteryFit" and not Extra.Pair(puzzle))
+		or not self.buttons[i].Visible
+		or (puzzle.Placed and puzzle.Placed[i])
+	then
+		return
+	end
+	local kind = input.UserInputType
+	if kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch then
+		return
+	end
+	local button = self.buttons[i]
+	local pointer = Vector2.new(input.Position.X, input.Position.Y)
+	self.selected = i
+	self.drag = {
+		Item = i,
+		Input = input,
+		Mouse = kind == Enum.UserInputType.MouseButton1,
+		Pointer = pointer,
+		LastPointer = pointer,
+		Start = button.AbsolutePosition - self.root.AbsolutePosition + button.AbsoluteSize / 2,
+		Id = self.work.Id,
+		Revision = puzzle.Revision,
+		RootPosition = self.root.AbsolutePosition,
+		RootSize = self.root.AbsoluteSize,
+	}
+	self.key = nil
+	self:Render()
+end
+function View:MoveDrag(input)
+	local drag = self.drag
+	if not drag then
+		return
+	end
+	if drag.RootPosition ~= self.root.AbsolutePosition or drag.RootSize ~= self.root.AbsoluteSize then
+		self:CancelDrag()
+		return
+	end
+	if input ~= drag.Input and not (drag.Mouse and input.UserInputType == Enum.UserInputType.MouseMovement) then
+		return
+	end
+	drag.LastPointer = Vector2.new(input.Position.X, input.Position.Y)
+	local delta = drag.LastPointer - drag.Pointer
+	if delta.Magnitude < 6 then
+		return
+	end
+	drag.Moved = true
+	local position = drag.Start + delta
+	self.ghost.Position = UDim2.fromOffset(position.X, position.Y)
+	self.ghost.Text = self.buttons[drag.Item].Text
+	self.ghost.Visible = true
+end
+function View:EndDrag(input)
+	local drag = self.drag
+	if
+		not drag
+		or (input ~= drag.Input and not (drag.Mouse and input.UserInputType == Enum.UserInputType.MouseButton1))
+	then
+		return
+	end
+	if
+		input.UserInputState == Enum.UserInputState.Cancel
+		or drag.RootPosition ~= self.root.AbsolutePosition
+		or drag.RootSize ~= self.root.AbsoluteSize
+	then
+		self:CancelDrag()
+		return
+	end
+	if not drag.Mouse then
+		drag.LastPointer = Vector2.new(input.Position.X, input.Position.Y)
+	end
+	local position = self.root.AbsolutePosition + drag.Start + drag.LastPointer - drag.Pointer
+	self.drag, self.ghost.Visible = nil, false
+	if not drag.Moved then
+		return
+	end
+	self.ignoreClickUntil = os.clock() + 0.15
+	for slot = 1, 3 do
+		local object = self.buttons[slot + 3]
+		local origin, size = object.AbsolutePosition, object.AbsoluteSize
+		if
+			object.Visible
+			and object.Active
+			and position.X >= origin.X
+			and position.X <= origin.X + size.X
+			and position.Y >= origin.Y
+			and position.Y <= origin.Y + size.Y
+		then
+			self:Submit(drag.Item * 10 + slot, drag)
+			return
+		end
+	end
+	self.selected, self.key = nil, nil
+	self:Render()
+end
+local function connect(line, a, b)
+	local delta = b - a
+	local center = (a + b) / 2
+	line.Position, line.Size, line.Rotation =
+		UDim2.fromOffset(center.X, center.Y),
+		UDim2.fromOffset(delta.Magnitude, 3),
+		math.deg(math.atan2(delta.Y, delta.X))
+	line.Visible = true
+end
+function View:Update(work, busy, visible)
+	local identity = work and (work.Id .. ":" .. work.Puzzle.Revision) or nil
+	local changed = identity ~= self.identity
+	self.identity = identity
+	self.work, self.busy = work, busy
+	self.root.Visible = visible == true
+	if changed or busy or not visible then
+		self:CancelDrag()
+	end
+	if not visible then
+		self.extra:Hide()
+		self.key = nil
+		return
+	end
+	self:Render()
+end
+function View:Render()
+	if not self.root.Visible then
+		return
+	end
+	local p = self.work.Puzzle
+	local now = workspace:GetServerTimeNow()
+	local reduced = self.d.reduced and self.d.reduced() or false
+	local watching = (p.Kind == "Memory" or p.Kind == "Speaker") and now < p.RevealUntil
+	local step = watching and math.floor((now - p.RevealAt) / 0.7) + 1 or 0
+	local lit = watching and (now - p.RevealAt) % 0.7 < 0.5 and p.Sequence[step] or 0
+	if Extra.Supports(p) then
+		self.key = nil
+		self.extra:Render(self, p, watching, lit, reduced)
+		return
+	end
+	self.extra:Hide()
+	local key = self.work.Id
+		.. ":"
+		.. p.Revision
+		.. ":"
+		.. tostring(self.busy)
+		.. ":"
+		.. tostring(self.selected)
+		.. ":"
+		.. tostring(lit)
+		.. ":"
+		.. tostring(step)
+		.. ":"
+		.. tostring(watching)
+		.. ":"
+		.. tostring(reduced)
+		.. ":"
+		.. tostring(self.root.AbsoluteSize)
+	if self.key == key then
+		return
+	end
+	self.key = key
+	self.check.Visible = p.Kind == "Circuit" or p.Kind == "Dials" or p.Kind == "Memory"
+	self.check.Active = not self.busy and not watching
+	self.check.Text = p.Kind == "Memory"
+			and (now < p.RevealAt and "GET READY" or watching and ("WATCH " .. math.min(step, p.Count) .. "/" .. p.Count) or "REPLAY SIGNAL")
+		or p.Kind == "Dials" and "LOCK DATA LINK"
+		or "TEST CIRCUIT / IN TO OUT"
+	for _, line in ipairs(self.lines) do
+		line.Visible = false
+	end
+	for i, button in ipairs(self.buttons) do
+		button.Visible, button.Active, button.Rotation = i <= 6, not self.busy and not watching, 0
+		if i > 6 then
+			continue
+		end
+		button.BackgroundColor3, button.TextColor3 = BLACK, WHITE
+		button.TextYAlignment = Enum.TextYAlignment.Center
+		button.TextXAlignment, button.TextSize = Enum.TextXAlignment.Center, 14
+		button.Position = UDim2.new((i - 1) % 3 / 3, 4, math.floor((i - 1) / 3) * 0.37, 0)
+		button.Size = UDim2.new(1 / 3, -8, 0.34, -2)
+		for _, arm in ipairs(self.arms[i]) do
+			arm.Visible = false
+		end
+		if self.dials[i] then
+			self.dials[i].Visible = p.Kind == "Dials"
+		end
+		if p.Kind == "Wires" or p.Kind == "BatteryFit" then
+			local item = i <= 3 and i or p.Slots[i - 3]
+			button.Position = UDim2.new(i <= 3 and 0 or 0.7, 0, ((i - 1) % 3) / 3, 2)
+			button.Size = UDim2.new(0.3, 0, 1 / 3, -6)
+			button.Text = p.Kind == "Wires" and ((i <= 3 and "WIRE " or "PORT ") .. item)
+				or ((i <= 3 and "CELL " or "BAY ") .. MARKS[item])
+			button.TextColor3 = COLORS[item]
+			if p.Placed[item] then
+				button.Text = p.Kind == "Wires" and "CONNECTED " .. item or "FITTED " .. MARKS[item]
+				button.Active = false
+				button.TextColor3 = ACCENT
+				if p.Kind == "BatteryFit" and i <= 3 then
+					button.Visible = false
+				end
+			end
+			if self.selected == i then
+				button.Text = "[ " .. button.Text .. " ]"
+			end
+		elseif p.Kind == "Probes" then
+			local index = (i - 1) % 3 + 1
+			button.Text = i <= 3 and (NAMES[i] .. "\n" .. p.Readings[i]) or ("REPLACE\n" .. NAMES[index])
+			if i > 3 then
+				button.Visible = p.Progress == 3
+			end
+		elseif p.Kind == "Circuit" then
+			button.Text = i == 1 and "IN" or i == 4 and "OUT" or ""
+			button.TextYAlignment, button.TextXAlignment, button.TextSize =
+				Enum.TextYAlignment.Top, Enum.TextXAlignment.Left, 11
+			local rotation = p.Rotations[i]
+			local a, b = rotation % 4, (rotation + (p.Shapes[i] == "Straight" and 2 or 1)) % 4
+			self.arms[i][a + 1].Visible, self.arms[i][b + 1].Visible = true, true
+		elseif p.Kind == "Dials" then
+			button.Visible = i <= 3
+			if i <= 3 then
+				button.Size = UDim2.new(1 / 3, -8, 1, -52)
+				button.TextYAlignment = Enum.TextYAlignment.Bottom
+				button.Text = "TURN / " .. p.Values[i]
+				self.dialLabels[i].Text = "TARGET " .. p.Targets[i]
+				self.needles[i].Rotation = (p.Values[i] - 3) * 60
+			end
+		else
+			button.Text = tostring(i)
+			if watching and lit == i then
+				button.Text = "[ " .. i .. " ]"
+				if not reduced then
+					button.BackgroundColor3 = Color3.fromRGB(65, 59, 50)
+				end
+			end
+		end
+	end
+	if p.Kind == "Wires" and self.root.AbsoluteSize and self.root.AbsoluteSize.X > 0 then
+		local size = self.root.AbsoluteSize
+		for item, placed in ipairs(p.Placed) do
+			if placed then
+				local slot = table.find(p.Slots, item)
+				connect(
+					self.lines[item],
+					Vector2.new(size.X * 0.3, size.Y * ((item - 0.5) / 3)),
+					Vector2.new(size.X * 0.7, size.Y * ((slot - 0.5) / 3))
+				)
+			end
+		end
+	end
+end
+function View:Destroy()
+	self.extra:Hide()
+	self:CancelDrag()
+	for _, connection in ipairs(self.connections) do
+		connection:Disconnect()
+	end
+	self.root:Destroy()
+end
+return View

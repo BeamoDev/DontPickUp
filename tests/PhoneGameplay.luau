@@ -6,7 +6,7 @@ local function check(value, message)
 	total += 1
 end
 local h = Harness.Environment()
-local Phone = h:load("src/GServer/Prototype/Customers/PhoneSession.luau")
+local Phone = h:load("src/GServer/Repair/PhoneSoftware.luau")
 local order = {
 	Customer = "Nina",
 	PuzzleSeed = 1,
@@ -229,7 +229,7 @@ for _, requestSkip in ipairs({ false, true }) do
 	)
 end
 do
-	local Schema = h:load("src/LServer/Core/ProfileSchema.luau")
+	local Schema = h:load("src/LServer/PlayerData/ProfileSchema.luau")
 	local legacy = Schema.Default()
 	legacy.Version, legacy.Stats.Credits = 1, nil
 	legacy.Stats.ShiftsSurvived, legacy.Progress.HighestShift = 12, 6
@@ -237,7 +237,7 @@ do
 	legacy.RecentOutcomes = { "already_paid" }
 	local decoded = Schema.Decode({ Format = 1, Data = legacy })
 	check(
-		decoded.Version == 2 and decoded.Stats.Credits == 0 and decoded.Progress.HighestShift == 6,
+		decoded.Version == Schema.Version and decoded.Stats.Credits == 0 and decoded.Progress.HighestShift == 6,
 		"v1 migration preserves best completed night and starts wallet at zero"
 	)
 	check(
@@ -250,14 +250,14 @@ do
 	legacy.Settings = nil
 	check(Schema.Decode({ Format = 1, Data = legacy }) == nil, "malformed old profile fails closed")
 	local future = Schema.Default()
-	future.Version = 3
+	future.Version = Schema.Version + 1
 	check(Schema.Decode({ Format = 1, Data = future }) == nil, "future schemas cannot be silently downgraded")
 	local malformed = Schema.Default()
 	malformed.Stats.Credits = -1
 	check(not Schema.Validate(malformed), "negative wallet rejected")
 end
 do
-	local Tasks = h:load("src/GServer/Prototype/Repair/RepairTasks.luau")
+	local Tasks = h:load("src/GServer/Repair/RepairTasks.luau")
 	for seed = 1, 20 do
 		local p = Tasks.New("Repair", "Speaker", seed)
 		check(#p.Slots == 4 and #p.Placed == 4, "four wire entry and exit ports")

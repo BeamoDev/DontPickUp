@@ -2,7 +2,9 @@ local Harness = require("./Harness")
 local benchMove = require("./BenchDriver")
 return function(count, check)
 	local h = Harness.Environment()
-	local c = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau")
+	local c = h:load("src/GServer/Session/GameConfig.luau")
+	c.ShopDirection = false -- Historical scenarios; ShopDirection suite tests the new production flow.
+	c.ClosingSeconds = 0 -- Original scenarios retain immediate dawn; ShiftPhases tests the production grace period.
 	c.Director.Enabled = false -- Existing fixtures deliberately exercise the fixed scenario schedule.
 	local players, records, saves, health, tutorial, evidence, nearby = {}, {}, {}, {}, {}, {}, {}
 	local session = { State = "Ready", Ready = true }
@@ -10,7 +12,7 @@ return function(count, check)
 	local outside = {}
 	local seated, parts = {}, {}
 	local gear, gearMode = {}, { Explicit = false }
-	local run = h:load("src/GServer/Prototype/Shifts/ShiftService.luau").new({
+	local run = h:load("src/GServer/Session/ShiftService.luau").new({
 		debug = function(message)
 			table.insert(debugMessages, message)
 		end,

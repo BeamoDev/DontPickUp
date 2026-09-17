@@ -1,154 +1,238 @@
-# Source move manifest
+# Source organization and deployment
 
-## Charged throwing (2026-09-16)
+Runtime code is organized by complete systems. `src` contains exactly `GClient`, `GServer`, `GShared`, `LClient`, `LServer`, and `LShared`; each root has one folder level, with scripts/modules only inside each system. There are no runtime Prototype, Core, Queues, Settings, Containers or PhoneRepair folders.
 
-The exact `throw` tag adds held input and server-owned charged launching through the existing central router. New ModuleScripts: GShared/Interactions/ThrowConfig, GClient/Interactions/ThrowInteraction, GServer/Interactions/ThrowService and ThrowEffects. Sync them with updated GameController, TaggedInteraction, InteractionTags, InteractionService and Bootstrap. No archived runtime changes. Setup and limits: [THROWING](THROWING.md).
+## Gameplay audit ? 2026-09-16
 
-## Central tags and drinks (2026-09-16)
+The latest authored layout no longer needs the four RepairPhone/CounterPhone placement anchors. DevicePlacement derives positions from Bench, Bench2 and Counter, with optional named mounts documented in PROTOTYPE_ASSETS.md. Building.Lighting is recognized. Construction failures roll back runtime phones, input bindings, scene state, admission folders and travel listeners.
 
-Add `Drink`, `Fax`, `Container` tags to the authored props as described in [TAGGED_INTERACTIONS](TAGGED_INTERACTIONS.md). Names no longer activate models. `GClient/Containers/ContainerInteraction` moved to `GClient/Interactions/TaggedInteraction`; remove the old ModuleScript. Add GShared/Interactions/InteractionTags and GServer/Interactions/{InteractionService,TagBindings,DrinkService}. Bootstrap starts the central InteractionService; it binds any tagged container groups and drink items, including runtime tag/reparent changes. All client/server/shared roots must sync together. Container/Fax camera behavior remains, and drinks fade/delete through server validation. Earlier no-tags and name-based directions below are superseded.
+Counter input now carries the snapshot's CounterOrderId and revalidates that customer before acting; selected-bench IDs no longer incorrectly route intake/return. Direct bench clicks retain Station for SelectStation. Server checks now test physical wall occlusion at ordinary stations as well as storage and Fax. Queued respawns are coalesced and cancelled on departure/teardown.
 
-## Container model inspection (2026-09-16)
+GameLost and dialogue share pixel grayscale math. Dialogue clones convert supported textures with bounded memory and cancellation; unsupported avatar clothing or inaccessible assets retain their original appearance. Authored portrait camera properties are unchanged. See DIALOGUE.md for limitations.
 
-First select the whole Workspace.ComponentBoxes Model to enter a camera close-up, then select its individual Box parts to open/close them. Sync the updated GameController, ContainerInteraction and ContainerConfig plus new ModuleScripts GClient/Interactions/ModelInspection and GShared/Interactions/InspectionFrame. TelephoneConfig now also requires InspectionFrame for its existing framing math. Camera ownership is local; the existing server toggle contract is unchanged. Q/B/CLOSE VIEW and interruptions restore the normal camera. See [CONTAINERS](CONTAINERS.md).
+Targeted checks cover the screenshot's missing anchors/nested lights, precise mounts, failed/retried startup, other-bench counter intake and stale targets, station identity, walls, respawn cancellation, image conversion/cache/budget/failure/late teardown. Run tests/Run.ps1 for all existing lifecycle, input, gameplay, persistence and Lobby checks. These are mocked/source checks, not Studio or published multiplayer verification.
 
-## Telephone selection and keypad (2026-09-16)
+Studio: use 2?4 clients to contest a bench/drawer/phone, leave or reset while repairing/carrying/calling, join mid-shift, complete concurrent repairs, die while a teammate continues, then retry and return to Lobby. Check imported phone placement and loose-part camera coverage, blackout lights, gray mugshots, texture permissions and speaker transitions on real rigs. No additional Workspace deletions are required.
 
-`src/GClient/ContainerController.local.luau` is renamed to `src/GClient/GameController.local.luau`. Remove the old ContainerController instance after syncing; do not run both. New ModuleScripts: GClient/Telephone/TelephoneInteraction and GShared/Telephone/TelephoneConfig. Existing container input routes telephone selection through the same bounded idle ray. No server files or archived prototype modules change for telephone inspection. Model/GUI bindings and camera tuning are documented in [TELEPHONE](TELEPHONE.md); tests/Telephone.luau covers framing, authored keypad/screen behavior and interruption cleanup with mocks.
+## Sync this change
 
-## Prototype archive and containers (2026-09-16)
+1. Stop Play in Studio. Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/SyncCommon.ps1` after editing common code, then `tests/Run.ps1`.
+2. Sync all three roots for each place together, using `project.sources.json` destinations. Game and Lobby roots still belong in separate places. This JSON is consumed by SyncCommon; it is not a Rojo or Roblox plugin configuration.
+3. Remove obsolete **scripts only** using `tests/SourceMoves.json`. The table below covers old script paths, relative to src. Replace current modules with updated contents as well; some historical module names are reused with a new responsibility.
+4. There must be only one executable client script and one executable server script per place: `Startup/Bootstrap.local.luau` and `Startup/Bootstrap.server.luau`. `.local.luau` remains this project's LocalScript convention. `GClient.Startup.GameController` is now a ModuleScript: remove the former GameController LocalScript before creating its ModuleScript replacement. Likewise remove the old Lobby QueueController LocalScript; the replacement is a ModuleScript under Matchmaking.
+5. Restart Play and follow the Studio checklist in CURRENT_ARCHITECTURE.md. Keep all authored Workspace models, HUD screens, assets, Remotes, cameras and highlights. In particular, **do not delete Workspace.Prototype or DPU_PrototypeHUD**. Only source folder naming changed.
 
-`GServer/GameConfig.PrototypeEnabled = false` now gates the archived prototype before imports. Sync all three Game roots together. If Script Sync leaves old instances, remove the **old copies at the left-hand paths below only after the right-hand copies are synced**. Keep authored world models and ReplicatedStorage.Assets untouched.
+## Shared infrastructure
 
-| Old Game path | New Game path |
+Maintain the 13 reusable modules once under `common/CommonServer/{Configuration,PlayerData,Networking,Travel}` and `common/CommonClient/Interface`. `project.sources.json` maps them into both existing place roots. `tools/SyncCommon.ps1` generates the deployment copies; `-Check` rejects missing or edited copies. Do not hand-edit generated modules in src. `tests/SyncCore.ps1` and `tests/SyncSettings.ps1` remain compatibility commands for the server/client groups.
+
+The package holds only implemented infrastructure, not speculative empty modules. ProfileStore is the existing first-party save-lock implementation, not a third-party dependency. Its DataStore namespace, migrations, leases, admission tickets, saves and outcome idempotency are unchanged.
+
+## Consolidation
+
+The two first-person cursor/camera implementations now share `GClient/Camera/CameraController`; it restores bound authored UI or destroys its own temporary UI according to ownership. InspectionCamera remains the reusable camera-transition controller. Dialogue's timed shift adapter and test-demo adapter share DialogueView/DialoguePortrait in Interface. Settings has one common implementation. CarryController owns pickup/release requests while CarryView owns smooth local visualization. QueueService owns membership/countdowns; LobbyWorldService and QueueView retain their distinct world/UI lifecycles. Server-owned billboards remain server-owned.
+
+SessionController starts the active client's systems explicitly. SessionService connects admission, data and GameService on the server; ShiftService owns the shift state. OrderService contains the shift's order actions, while BenchOrderService clearly labels the retained alternate test bench. GameConfig.Enabled still selects exactly one mode and defaults true. Existing wire protocol names such as PrototypeEnabled, PrototypeAction and GetPrototype are retained for compatibility; they do not require Prototype source folders.
+
+## Obsolete script paths
+
+| Remove old script | Replacement |
 | --- | --- |
-| GServer/Anomalies, Customers, Lore, Repair, Shifts, World | Same folders under GServer/Prototype |
-| GServer/Services/GamePrototype, DialogueService, EngagementService | GServer/Prototype/Services (GameSession stays in GServer/Services) |
-| GShared/Networking, Repair, UI | Same folders under GShared/Prototype |
-| GClient/PrototypeController | GClient/Prototype/PrototypeController (still a LocalScript) |
-| GClient/Dialogue, Effects, Repair | Same folders under GClient/Prototype |
-| GClient/Interactions/WorldInteraction, StationInteraction | GClient/Prototype/Interactions (FirstPersonCamera stays outside) |
+| `GClient/Camera/FirstPersonCamera` | `GClient/Camera/CameraController` |
+| `GClient/Dialogue/DialogueConfig` | `GClient/Interface/DialogueConfig` |
+| `GClient/Dialogue/DialogueController` | `GClient/Interface/DialogueDemoController` |
+| `GClient/Dialogue/DialoguePortrait` | `GClient/Interface/DialoguePortrait` |
+| `GClient/Dialogue/DialogueView` | `GClient/Interface/DialogueView` |
+| `GClient/Dialogue/SubtitleView` | `GClient/Interface/DialogueController` |
+| `GClient/Effects/ScarePresentation` | `GClient/Effects/HorrorController` |
+| `GClient/GameController.local` | `GClient/Startup/GameController` |
+| `GClient/HUD/Mugshot` | `GClient/Interface/Mugshot` |
+| `GClient/HUD/ShiftPanels` | `GClient/Interface/ShiftPanelController` |
+| `GClient/Interactions/CarryView` | `GClient/Interaction/CarryView` |
+| `GClient/Interactions/FirstPersonCamera` | `GClient/Camera/CameraController` |
+| `GClient/Interactions/InteractionController` | `GClient/Interaction/InteractionController` |
+| `GClient/Interactions/ModelInspection` | `GClient/Camera/InspectionCamera` |
+| `GClient/Interactions/SelectionHighlight` | `GClient/Interaction/SelectionHighlight` |
+| `GClient/Interactions/StationInteraction` | `GClient/Interaction/StationInteractionController` |
+| `GClient/Interactions/TaggedInteraction` | `GClient/Interaction/InteractionController` |
+| `GClient/Interactions/ThrowController` | `GClient/Interaction/CarryController` |
+| `GClient/Interactions/ThrowInteraction` | `GClient/Interaction/CarryController` |
+| `GClient/Interactions/WorldInteraction` | `GClient/Interaction/WorldInteractionController` |
+| `GClient/Orders/OrderController` | `GClient/Interface/OrderController` |
+| `GClient/Orders/OrderView` | `GClient/Interface/OrderView` |
+| `GClient/PhoneRepair/PhoneRepairController` | `GClient/Repair/PhoneRepairController` |
+| `GClient/PhoneRepair/RepairDragController` | `GClient/Repair/RepairDragController` |
+| `GClient/PhoneRepair/RepairViewConfig` | `GClient/Repair/RepairViewConfig` |
+| `GClient/Prototype/AuthoredUI` | `GClient/Interface/AuthoredUI` |
+| `GClient/Prototype/BenchTaskView` | `GClient/Repair/BenchTaskView` |
+| `GClient/Prototype/DeviceTaskView` | `GClient/Repair/DeviceTaskView` |
+| `GClient/Prototype/FaxView` | `GClient/Effects/TelephoneController` |
+| `GClient/Prototype/FirstPersonCamera` | `GClient/Camera/CameraController` |
+| `GClient/Prototype/InspectionView` | `GClient/Interface/InspectionView` |
+| `GClient/Prototype/PhysicalRepairTasks` | `GClient/Repair/PhysicalRepairTasks` |
+| `GClient/Prototype/PhysicalRepairView` | `GClient/Repair/PhysicalRepairView` |
+| `GClient/Prototype/PickupTelephone` | `GClient/Effects/TelephoneController` |
+| `GClient/Prototype/PrototypeController` | `GClient/Session/SessionController` |
+| `GClient/Prototype/PrototypeView` | `GClient/Interface/HUDController` |
+| `GClient/Prototype/PuzzleView` | `GClient/Repair/PuzzleView` |
+| `GClient/Prototype/RepairAssembly` | `GClient/Repair/RepairAssembly` |
+| `GClient/Prototype/RepairPresentation` | `GClient/Repair/RepairPresentation` |
+| `GClient/Prototype/RepairTaskView` | `GClient/Repair/RepairTaskView` |
+| `GClient/Prototype/Requests` | `GClient/Session/SessionRequests` |
+| `GClient/Prototype/ScarePresentation` | `GClient/Effects/HorrorController` |
+| `GClient/Prototype/StationInteraction` | `GClient/Interaction/StationInteractionController` |
+| `GClient/Prototype/SubtitleView` | `GClient/Interface/DialogueController` |
+| `GClient/Prototype/TelevisionController` | `GClient/Effects/TelevisionController` |
+| `GClient/Prototype/WorldInteraction` | `GClient/Interaction/WorldInteractionController` |
+| `GClient/PrototypeController.local` | `GClient/Session/SessionController` |
+| `GClient/Settings/SettingsAudio` | `GClient/Interface/SettingsAudio` |
+| `GClient/Settings/SettingsController` | `GClient/Interface/SettingsController` |
+| `GClient/Settings/SettingsView` | `GClient/Interface/SettingsView` |
+| `GClient/Startup/GameController.local` | `GClient/Startup/Bootstrap.local` |
+| `GClient/Telephone/ReceiverMotion` | `GClient/Effects/ReceiverMotion` |
+| `GClient/Telephone/TelephoneCalls` | `GClient/Effects/TelephoneCalls` |
+| `GClient/Telephone/TelephoneConfig` | `GClient/Effects/TelephoneConfig` |
+| `GClient/Telephone/TelephoneController` | `GClient/Effects/PhysicalTelephoneController` |
+| `GClient/Telephone/TelephoneInteraction` | `GClient/Effects/PhysicalTelephoneController` |
+| `GServer/Anomalies/EventDirector` | `GServer/Horror/EventDirector` |
+| `GServer/Anomalies/OutdoorRisk` | `GServer/Horror/OutdoorRisk` |
+| `GServer/Anomalies/ThreatService` | `GServer/Horror/ThreatService` |
+| `GServer/Bootstrap.server` | `GServer/Startup/Bootstrap.server` |
+| `GServer/Containers/ContainerService` | `GServer/Interaction/ContainerService` |
+| `GServer/Containers/DrawerContents` | `GServer/Interaction/DrawerContents` |
+| `GServer/Core/AdmissionRules` | `GServer/Travel/AdmissionRules` |
+| `GServer/Core/Config` | `GServer/Configuration/ServerConfig` |
+| `GServer/Core/DataService` | `GServer/PlayerData/DataService` |
+| `GServer/Core/Network` | `GServer/Networking/NetworkService` |
+| `GServer/Core/PlayerView` | `GServer/PlayerData/PlayerView` |
+| `GServer/Core/ProfileSchema` | `GServer/PlayerData/ProfileSchema` |
+| `GServer/Core/ProfileStore` | `GServer/PlayerData/ProfileStore` |
+| `GServer/Core/RateLimiter` | `GServer/Networking/RateLimiter` |
+| `GServer/Core/SessionStore` | `GServer/PlayerData/ProfileStore` |
+| `GServer/Core/TicketStore` | `GServer/Travel/TicketStore` |
+| `GServer/Core/TravelService` | `GServer/Travel/TravelService` |
+| `GServer/Customers/Conversations` | `GServer/Story/DialogueCatalog` |
+| `GServer/Customers/PhoneSession` | `GServer/Repair/PhoneSoftware` |
+| `GServer/Customers/PickupService` | `GServer/Orders/CustomerPickupService` |
+| `GServer/Interactions/DrinkService` | `GServer/Interaction/DrinkService` |
+| `GServer/Interactions/InteractionService` | `GServer/Interaction/InteractionService` |
+| `GServer/Interactions/TagBindings` | `GServer/Interaction/TagBindings` |
+| `GServer/Interactions/ThrowEffects` | `GServer/Interaction/ThrowEffects` |
+| `GServer/Interactions/ThrowService` | `GServer/Interaction/ThrowService` |
+| `GServer/Lore/LoreService` | `GServer/Story/LoreService` |
+| `GServer/Lore/ShopSecrets` | `GServer/Story/LoreCatalog` |
+| `GServer/Orders/OrderCatalog` | `GServer/Orders/BenchOrderCatalog` |
+| `GServer/Orders/OrderStation` | `GServer/Orders/BenchOrderStation` |
+| `GServer/Orders/OrderTestBench` | `GServer/Orders/BenchOrderTestBench` |
+| `GServer/PhoneRepair/PhoneRepairService` | `GServer/Repair/PhoneRepairService` |
+| `GServer/PhoneRepair/RepairMotion` | `GServer/Repair/RepairMotion` |
+| `GServer/Prototype/AdmissionRules` | `GServer/Travel/AdmissionRules` |
+| `GServer/Prototype/BenchTasks` | `GServer/Repair/BenchTasks` |
+| `GServer/Prototype/Conversations` | `GServer/Story/DialogueCatalog` |
+| `GServer/Prototype/CustomerCatalog` | `GServer/Customers/CustomerCatalog` |
+| `GServer/Prototype/CustomerStories` | `GServer/Story/CustomerStories` |
+| `GServer/Prototype/DevicePresentation` | `GServer/Repair/DevicePresentation` |
+| `GServer/Prototype/DeviceRecords` | `GServer/Story/DeviceRecords` |
+| `GServer/Prototype/DialogueService` | `GServer/Story/DialogueService` |
+| `GServer/Prototype/EndingRules` | `GServer/Story/EndingRules` |
+| `GServer/Prototype/EngagementService` | `GServer/Session/EmployeeService` |
+| `GServer/Prototype/EventDirector` | `GServer/Horror/EventDirector` |
+| `GServer/Prototype/GamePrototype` | `GServer/Session/GameService` |
+| `GServer/Prototype/GameSession` | `GServer/Session/AdmissionSession` |
+| `GServer/Prototype/LoreService` | `GServer/Story/LoreService` |
+| `GServer/Prototype/ModeRules` | `GServer/Session/ModeRules` |
+| `GServer/Prototype/OutdoorRisk` | `GServer/Horror/OutdoorRisk` |
+| `GServer/Prototype/PhoneSession` | `GServer/Repair/PhoneSoftware` |
+| `GServer/Prototype/PickupService` | `GServer/Orders/CustomerPickupService` |
+| `GServer/Prototype/PrototypeConfig` | `GServer/Session/GameConfig` |
+| `GServer/Prototype/PrototypeRuntime` | `GServer/Session/SessionService` |
+| `GServer/Prototype/PrototypeStorage` | `GServer/World/StorageService` |
+| `GServer/Prototype/PrototypeWorld` | `GServer/World/WorldService` |
+| `GServer/Prototype/RepairFlow` | `GServer/Orders/OrderService` |
+| `GServer/Prototype/RepairRoutine` | `GServer/Repair/RepairRoutine` |
+| `GServer/Prototype/RepairStations` | `GServer/Repair/RepairStations` |
+| `GServer/Prototype/RepairTasks` | `GServer/Repair/RepairTasks` |
+| `GServer/Prototype/RepairTemplates` | `GServer/Repair/RepairTemplates` |
+| `GServer/Prototype/ShiftActions` | `GServer/Session/ShiftActions` |
+| `GServer/Prototype/ShiftClosing` | `GServer/Session/ShiftClosing` |
+| `GServer/Prototype/ShiftDefinitions` | `GServer/Session/ShiftDefinitions` |
+| `GServer/Prototype/ShiftService` | `GServer/Session/ShiftService` |
+| `GServer/Prototype/ShiftSnapshot` | `GServer/Session/ShiftSnapshot` |
+| `GServer/Prototype/ShiftStats` | `GServer/Session/ShiftStats` |
+| `GServer/Prototype/ShopLayout` | `GServer/World/WorldLayout` |
+| `GServer/Prototype/ShopPolicy` | `GServer/Story/GovernmentService` |
+| `GServer/Prototype/ShopSecrets` | `GServer/Story/LoreCatalog` |
+| `GServer/Prototype/ThreatService` | `GServer/Horror/ThreatService` |
+| `GServer/Prototype/TicketStore` | `GServer/Travel/TicketStore` |
+| `GServer/Prototype/TravelService` | `GServer/Travel/TravelService` |
+| `GServer/Prototype/WorkPuzzles` | `GServer/Repair/RepairPuzzles` |
+| `GServer/Prototype/Workshop` | `GServer/Repair/WorkshopService` |
+| `GServer/Repair/RepairFlow` | `GServer/Orders/OrderService` |
+| `GServer/Repair/WorkPuzzles` | `GServer/Repair/RepairPuzzles` |
+| `GServer/Repair/Workshop` | `GServer/Repair/WorkshopService` |
+| `GServer/Services/DialogueService` | `GServer/Story/DialogueService` |
+| `GServer/Services/EngagementService` | `GServer/Session/EmployeeService` |
+| `GServer/Services/GamePrototype` | `GServer/Session/GameService` |
+| `GServer/Services/GameSession` | `GServer/Session/AdmissionSession` |
+| `GServer/Shifts/EndingRules` | `GServer/Story/EndingRules` |
+| `GServer/Shifts/ModeRules` | `GServer/Session/ModeRules` |
+| `GServer/Shifts/PrototypeConfig` | `GServer/Session/GameConfig` |
+| `GServer/Shifts/ShiftActions` | `GServer/Session/ShiftActions` |
+| `GServer/Shifts/ShiftDefinitions` | `GServer/Session/ShiftDefinitions` |
+| `GServer/Shifts/ShiftService` | `GServer/Session/ShiftService` |
+| `GServer/Shifts/ShiftSnapshot` | `GServer/Session/ShiftSnapshot` |
+| `GServer/World/PrototypeWorld` | `GServer/World/WorldService` |
+| `GServer/World/ShopLayout` | `GServer/World/WorldLayout` |
+| `GShared/Containers/ContainerConfig` | `GShared/Interaction/ContainerConfig` |
+| `GShared/Interactions/InspectionFrame` | `GClient/Camera/InspectionFrame` |
+| `GShared/Interactions/InteractionQuery` | `GShared/Interaction/InteractionQuery` |
+| `GShared/Interactions/InteractionTags` | `GShared/Interaction/InteractionTags` |
+| `GShared/Interactions/TVConfig` | `GClient/Camera/TelevisionViewConfig` |
+| `GShared/Interactions/ThrowConfig` | `GShared/Interaction/ThrowConfig` |
+| `GShared/Networking/Requests` | `GClient/Session/SessionRequests` |
+| `GShared/PhoneRepair/RepairDefinition` | `GShared/Repair/RepairDefinition` |
+| `GShared/PhoneRepair/RepairRig` | `GShared/Repair/RepairRig` |
+| `GShared/Prototype/Definitions` | `GShared/Repair/RepairDefinitions` |
+| `GShared/Prototype/SceneReferences` | `GShared/World/SceneReferences` |
+| `GShared/Repair/BenchTaskView` | `GClient/Repair/BenchTaskView` |
+| `GShared/Repair/Definitions` | `GShared/Repair/RepairDefinitions` |
+| `GShared/Repair/PhysicalRepairTasks` | `GClient/Repair/PhysicalRepairTasks` |
+| `GShared/Repair/PhysicalRepairView` | `GClient/Repair/PhysicalRepairView` |
+| `GShared/Repair/PuzzleView` | `GClient/Repair/PuzzleView` |
+| `GShared/Repair/RepairTaskView` | `GClient/Repair/RepairTaskView` |
+| `GShared/Telephone/TelephoneConfig` | `GClient/Effects/TelephoneConfig` |
+| `GShared/UI/FaxView` | `GClient/Effects/TelephoneController` |
+| `GShared/UI/InspectionView` | `GClient/Interface/InspectionView` |
+| `GShared/UI/PrototypeView` | `GClient/Interface/HUDController` |
+| `LClient/QueueController.local` | `LClient/Matchmaking/QueueController` |
+| `LClient/Queues/QueueController.local` | `LClient/Startup/Bootstrap.local` |
+| `LClient/Queues/QueueRequests` | `LClient/Matchmaking/QueueRequests` |
+| `LClient/Queues/QueueView` | `LClient/Interface/QueueView` |
+| `LClient/Settings/SettingsAudio` | `LClient/Interface/SettingsAudio` |
+| `LClient/Settings/SettingsController` | `LClient/Interface/SettingsController` |
+| `LClient/Settings/SettingsView` | `LClient/Interface/SettingsView` |
+| `LServer/Bootstrap.server` | `LServer/Startup/Bootstrap.server` |
+| `LServer/Core/AdmissionRules` | `LServer/Travel/AdmissionRules` |
+| `LServer/Core/Config` | `LServer/Configuration/ServerConfig` |
+| `LServer/Core/DataService` | `LServer/PlayerData/DataService` |
+| `LServer/Core/Network` | `LServer/Networking/NetworkService` |
+| `LServer/Core/PlayerView` | `LServer/PlayerData/PlayerView` |
+| `LServer/Core/ProfileSchema` | `LServer/PlayerData/ProfileSchema` |
+| `LServer/Core/ProfileStore` | `LServer/PlayerData/ProfileStore` |
+| `LServer/Core/RateLimiter` | `LServer/Networking/RateLimiter` |
+| `LServer/Core/SessionStore` | `LServer/PlayerData/ProfileStore` |
+| `LServer/Core/TicketStore` | `LServer/Travel/TicketStore` |
+| `LServer/Core/TravelService` | `LServer/Travel/TravelService` |
+| `LServer/Parties/PartyService` | `LServer/Matchmaking/PartyService` |
+| `LServer/Queues/QueueBillboard` | `LServer/World/QueueBillboard` |
+| `LServer/Queues/QueueGeometry` | `LServer/World/QueueGeometry` |
+| `LServer/Queues/QueueWorld` | `LServer/World/LobbyWorldService` |
+| `LServer/Queues/WorldQueueService` | `LServer/Matchmaking/QueueService` |
+| `LServer/Runtime` | `LServer/Startup/Runtime` |
+| `LShared/Geometry/QueueGeometry` | `LServer/World/QueueGeometry` |
+| `LShared/Networking/QueueRequests` | `LClient/Matchmaking/QueueRequests` |
+| `LShared/Queues/QueueDefinitions` | `LShared/Matchmaking/QueueDefinitions` |
+| `LShared/UI/QueueBillboard` | `LServer/World/QueueBillboard` |
+| `LShared/UI/QueueView` | `LClient/Interface/QueueView` |
 
-New active files: `GServer/GameConfig`, `GServer/Containers/ContainerService`, `GClient/GameController.local.luau`, `GClient/Containers/ContainerInteraction`, `GShared/Containers/ContainerConfig`. Only GameController is a LocalScript; the other new files are ModuleScripts. The briefly proposed tagged-item system is removed: if you synced it during development, remove InteractionController, Interactions/ItemInteraction, Interactions/ItemService and UI/ItemInteractionView. Setup: [CONTAINERS](CONTAINERS.md). Earlier historical moves below now point to the archived destinations.
-
-Working-tree content was preserved before relocation. No compatibility wrappers remain. Core remains duplicated only for independent place deployment.
-
-| Previous path | Current path |
-| --- | --- |
-| `src/GServer/GamePrototype.luau` | `src/GServer/Prototype/Services/GamePrototype.luau` |
-| `src/GServer/GameSession.luau` | `src/GServer/Services/GameSession.luau` |
-| `src/GServer/ShiftService.luau` | `src/GServer/Prototype/Shifts/ShiftService.luau` |
-| `src/GServer/ModeRules.luau` | `src/GServer/Prototype/Shifts/ModeRules.luau` |
-| `src/GServer/EndingRules.luau` | `src/GServer/Prototype/Shifts/EndingRules.luau` |
-| `src/GServer/PrototypeConfig.luau` | `src/GServer/Prototype/Shifts/PrototypeConfig.luau` |
-| `src/GServer/CustomerCatalog.luau` | `src/GServer/Prototype/Customers/CustomerCatalog.luau` |
-| `src/GServer/Workshop.luau` | `src/GServer/Prototype/Repair/Workshop.luau` |
-| `src/GServer/WorkPuzzles.luau` | `src/GServer/Prototype/Repair/WorkPuzzles.luau` |
-| `src/GServer/RepairTasks.luau` | `src/GServer/Prototype/Repair/RepairTasks.luau` |
-| `src/GServer/BenchTasks.luau` | `src/GServer/Prototype/Repair/BenchTasks.luau` |
-| `src/GServer/RepairTemplates.luau` | `src/GServer/Prototype/Repair/RepairTemplates.luau` |
-| `src/GServer/EventDirector.luau` | `src/GServer/Prototype/Anomalies/EventDirector.luau` |
-| `src/GServer/OutdoorRisk.luau` | `src/GServer/Prototype/Anomalies/OutdoorRisk.luau` |
-| `src/GServer/ShopSecrets.luau` | `src/GServer/Prototype/Lore/ShopSecrets.luau` |
-| `src/GServer/PrototypeWorld.luau` | `src/GServer/Prototype/World/PrototypeWorld.luau` |
-| `src/GServer/ShopLayout.luau` | `src/GServer/Prototype/World/ShopLayout.luau` |
-| `src/GClient/PrototypeView.luau` | `src/GShared/Prototype/UI/PrototypeView.luau` |
-| `src/GClient/RepairPresentation.luau` | `src/GClient/Prototype/Repair/RepairPresentation.luau` |
-| `src/GClient/RepairAssembly.luau` | `src/GClient/Prototype/Repair/RepairAssembly.luau` |
-| `src/GClient/PuzzleView.luau` | `src/GShared/Prototype/Repair/PuzzleView.luau` |
-| `src/GClient/RepairTaskView.luau` | `src/GShared/Prototype/Repair/RepairTaskView.luau` |
-| `src/GClient/BenchTaskView.luau` | `src/GShared/Prototype/Repair/BenchTaskView.luau` |
-| `src/GClient/PhysicalRepairView.luau` | `src/GShared/Prototype/Repair/PhysicalRepairView.luau` |
-| `src/GClient/PhysicalRepairTasks.luau` | `src/GShared/Prototype/Repair/PhysicalRepairTasks.luau` |
-| `src/GClient/StationInteraction.luau` | `src/GClient/Prototype/Interactions/StationInteraction.luau` |
-| `src/GClient/SubtitleView.luau` | `src/GClient/Prototype/Dialogue/SubtitleView.luau` |
-| `src/GClient/ScarePresentation.luau` | `src/GClient/Prototype/Effects/ScarePresentation.luau` |
-| `src/LServer/PartyService.luau` | `src/LServer/Parties/PartyService.luau` |
-| `src/LServer/WorldQueueService.luau` | `src/LServer/Queues/WorldQueueService.luau` |
-| `src/LServer/QueueWorld.luau` | `src/LServer/Queues/QueueWorld.luau` |
-| `src/LServer/QueueGeometry.luau` | `src/LShared/Geometry/QueueGeometry.luau` |
-| `src/LServer/QueueBillboard.luau` | `src/LShared/UI/QueueBillboard.luau` |
-| `src/LClient/QueueView.luau` | `src/LShared/UI/QueueView.luau` |
-| `src/LClient/QueueRequests.luau` | `src/LShared/Networking/QueueRequests.luau` |
-
-## Phone gameplay release changes
-
-Sync new `GServer/Prototype/Customers/PhoneSession` with complete GServer, GClient and GShared roots. It owns private phone menus, installation, records and calls; the existing Shared PuzzleView renders only the current page. Story now has five chapters. Four-wire tasks accept an optional `ReplicatedStorage.DontPickUpTemplates.RepairWire` BasePart/MeshPart cable template, length along Z.
-
-Sync both server Core folders together: schema 2 migrates schema-1 profiles, adds Credits wages, and exposes Credits / Best Night leaderstats. No DataStore namespace change. Run the new `tests/PhoneGameplay.luau` suite with all existing checks. In Studio check phone text/button fit on desktop, mobile and controller; both bench handoffs; team refusal/investigation; fax pickup; authored cable appearance; and profile migration using the separate Studio store. Published persistence remains unverified.
-
-## Added files
-
-| File | Purpose |
-| --- | --- |
-| `src/GServer/Prototype/Customers/Conversations.luau` | Short ordinary, comic, unusual, government and coworker exchanges |
-| `src/GServer/Prototype/Services/DialogueService.luau` | Bounded server-timed conversation sequence |
-| `src/GServer/Prototype/Services/EngagementService.luau` | Fictional employee reviews, night awards, run handbook and preset team callouts |
-| `src/GServer/Prototype/Lore/LoreService.luau` | Personal inspection, keys, expiry and scoped close |
-| `src/GServer/Prototype/Repair/RepairStations.luau` | Independent bench state, selection and shared vote coordination |
-| `src/GServer/Prototype/Repair/RepairFlow.luau` | Extracted repair lifecycle, stock recovery and work ticking |
-| `src/GServer/Prototype/Shifts/ShiftActions.luau` | Extracted validated player actions |
-| `src/GServer/Prototype/Shifts/ShiftSnapshot.luau` | Extracted per-player snapshots and shared ballot |
-| `src/GServer/Prototype/Shifts/ShiftDefinitions.luau` | Server-only transitions, station mapping and instructions |
-| `src/GServer/Prototype/Anomalies/ThreatService.luau` | Extracted injuries, outdoor danger and shared disturbances |
-| `src/GShared/Prototype/Networking/Requests.luau` | Serialized requests and original-visit deferred exits |
-| `src/GShared/Prototype/UI/InspectionView.luau` | Paginated readable document UI and controller close |
-| `src/GClient/Prototype/Interactions/WorldInteraction.luau` | Mouse/touch/controller direct world interaction and feedback |
-| `tests/ShiftFixture.luau` | Existing deterministic shift fixture extracted for reuse |
-| `tests/Improvements.luau` | Multi-station, lore, dialogue, request and input regressions |
-| `tests/Engagement.luau` | Employee-review privacy, award uniqueness, handbook and callout regressions |
-| `docs/DESIGN_REVIEW.md` | Before-edit architecture review and staged plan |
-| `docs/CURRENT_ARCHITECTURE.md` | Current architecture, controls, sync and manual setup |
-| `docs/SOURCE_CHANGES.md` | Complete move/change manifest |
-
-## Substantially changed existing files (current paths)
-
-| File | Change |
-| --- | --- |
-| `src/GServer/Prototype/Shifts/ShiftService.luau` | Reduced to lifecycle/scheduling and composition of cohesive method modules; explicit per-bench state |
-| `src/GServer/Prototype/Services/GamePrototype.luau` | Per-bench world routing, direct input validation and prompt rate limiting |
-| `src/GServer/Prototype/World/PrototypeWorld.luau` | Second complete bench/phone/seat, individual customer visuals, lore props, direct targets and per-player action routing |
-| `src/GServer/Prototype/World/ShopLayout.luau` | Room access for new bench and records |
-| `src/GServer/Prototype/Lore/ShopSecrets.luau` | Ten connected optional records added; original records/IDs retained |
-| `src/GServer/Prototype/Shifts/ModeRules.luau` | Shorter, lighter introductions |
-| `src/GClient/Prototype/PrototypeController.local.luau` | Wires request layer, reader, direct input and shared suppression/cleanup |
-| `src/GShared/Prototype/UI/PrototypeView.luau` | Shorter briefing, bench context, reader suppression and explicit forbidden-call choice |
-| `src/GClient/Prototype/Dialogue/SubtitleView.luau` | Server-timed lines, authored local You label, subtitle-setting support |
-| `src/GClient/Prototype/Repair/RepairPresentation.luau` | Select correct bench camera and phone highlight |
-| `src/GClient/Prototype/Repair/RepairAssembly.luau` | Select correct phone/tray for cosmetic fitting |
-| `src/GShared/Prototype/Repair/PhysicalRepairView.luau` | Correct phone and real seat checks at either bench |
-| `src/GShared/Prototype/Repair/PuzzleView.luau` | Owner/seat checks at either bench |
-| `tests/Harness.luau` | Nested relative ModuleScript paths |
-| `tests/Prototype.luau` | Updated folder/station observations, shared fixture and changed interaction contract assertions |
-| `tests/Validate.luau`, `tests/Runtime.luau`, `tests/Queues.luau` | Updated source paths after moves |
-| `README.md`, `AGENTS.md`, `docs/GAME_PROTOTYPE.md`, `docs/LOBBY_QUEUES.md`, `docs/SERVER_SYSTEMS.md` | Current paths, latest direction, deployment and validation boundaries |
-
-The two server bootstraps and Lobby client controller also have updated imports. Core remains byte-for-byte identical between places; no persistence schema, store name, place ID, authored Lobby layout or authored asset changed. The pre-existing removal of QueueBillboardMotion remains in place.
-
-Later Game updates add `Interactions/FirstPersonCamera` and simplify player-facing text across repair rules/views, job requirements, objectives, world prompts and nightly briefings. `WorkPuzzles.IsEasy` and `ShiftActions` select short visible-code tasks throughout night one and for two of three later order seed classes. The harder puzzle types remain available. `tests/Improvements.luau` covers that difficulty mix, plain diagnosis results and final-check actions; `tests/Prototype.luau` covers full repairs with the updated tasks. These changes require all three Game roots to be synced.
-
-The local Lune executable is in ignored `.tools/lune/`; it and temporary refactor helpers are not runtime source or required dependencies. No commit, push, sync or publication was performed.
-
-## Shared migration (latest)
-
-Map `src/LShared` to Lobby `ReplicatedStorage.LShared`, and `src/GShared` to Game `ReplicatedStorage.GShared`. Sync Client, Server and Shared together. After syncing the destinations, remove only these old ModuleScript instances if Script Sync leaves them behind:
-
-| Previous source | Current source |
-| --- | --- |
-| `src/GClient/UI/PrototypeView.luau` | `src/GShared/Prototype/UI/PrototypeView.luau` |
-| `src/GClient/UI/InspectionView.luau` | `src/GShared/Prototype/UI/InspectionView.luau` |
-| `src/GClient/Networking/Requests.luau` | `src/GShared/Prototype/Networking/Requests.luau` |
-| `src/GClient/Prototype/Repair/PuzzleView.luau` | `src/GShared/Prototype/Repair/PuzzleView.luau` |
-| `src/GClient/Prototype/Repair/RepairTaskView.luau` | `src/GShared/Prototype/Repair/RepairTaskView.luau` |
-| `src/GClient/Prototype/Repair/BenchTaskView.luau` | `src/GShared/Prototype/Repair/BenchTaskView.luau` |
-| `src/GClient/Prototype/Repair/PhysicalRepairView.luau` | `src/GShared/Prototype/Repair/PhysicalRepairView.luau` |
-| `src/GClient/Prototype/Repair/PhysicalRepairTasks.luau` | `src/GShared/Prototype/Repair/PhysicalRepairTasks.luau` |
-| `src/LClient/UI/QueueView.luau` | `src/LShared/UI/QueueView.luau` |
-| `src/LClient/Networking/QueueRequests.luau` | `src/LShared/Networking/QueueRequests.luau` |
-| `src/LServer/Queues/QueueBillboard.luau` | `src/LShared/UI/QueueBillboard.luau` |
-| `src/LServer/Queues/QueueGeometry.luau` | `src/LShared/Geometry/QueueGeometry.luau` |
-
-New `src/GShared/Prototype/Repair/Definitions.luau` owns public tool requirements, repair step names/transitions, bench IDs and task-kind names. It contains no session state, answers, generated seeds or story catalog. Server rules and Shared views use the same definitions. Lobby Shared and Game Shared are separate deployments; never combine them in one place.
-# Customer ticket pickup addition
-
-Added `src/GServer/Prototype/Customers/PickupService.luau` and `src/GShared/Prototype/UI/FaxView.luau`. Sync them as ModuleScripts in their matching subfolders, plus updated Game controller, Shared definitions/requests/HUD and server repair/shift/world adapters. Shared remains **ReplicatedStorage.GShared**. Added `tests/Pickup.luau`; existing fixture journeys now dial the fax and wait for customer collection before returning phones. No Lobby runtime changes belong to this feature.
+Historical implementation details remain in IMPLEMENTATION_HISTORY.md. PrototypeRestoration.json retains original Git provenance with updated current destinations.

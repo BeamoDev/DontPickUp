@@ -97,7 +97,7 @@ local ready, obstruction = true, nil
 world.Raycast = function()
 	return obstruction and { Instance = obstruction } or nil
 end
-local containers = h:load("src/GServer/Containers/ContainerService.luau").new(services, function()
+local containers = h:load("src/GServer/Interaction/ContainerService.luau").new(services, function()
 	return ready
 end)
 containers:Bind(folder)
@@ -181,6 +181,7 @@ check(
 local input = {
 	InputBegan = signal(),
 	InputEnded = signal(),
+	InputChanged = signal(),
 	WindowFocusReleased = signal(),
 	WindowFocused = signal(),
 	PreferredInput = preferred.KeyboardAndMouse,
@@ -204,8 +205,8 @@ function camera:ScreenPointToRay()
 	rayKind = "screen"
 	return { Origin = Roblox.Vector3.zero, Direction = Roblox.Vector3.zAxis }
 end
-function camera:ViewportPointToRay()
-	rayKind = "center"
+function camera:ViewportPointToRay(x, y)
+	rayKind = x ~= 400 and "screen" or "center"
 	return { Origin = Roblox.Vector3.zero, Direction = Roblox.Vector3.zAxis }
 end
 world.CurrentCamera = camera
@@ -215,7 +216,7 @@ end
 local template = h.instance("Highlight")
 template.Name, template.FillTransparency, template.Enabled = "SelectionHighlight", 0.73, false
 local blocked, hover = false, false
-local config = h:load("src/GShared/Containers/ContainerConfig.luau")
+local config = h:load("src/GShared/Interaction/ContainerConfig.luau")
 local origin, size = Roblox.CFrame.new(17, 1, 35), Roblox.Vector3.new(8, 2, 3)
 folder.GetPivot = function()
 	return origin
@@ -228,11 +229,11 @@ humanoid.MoveDirection = Roblox.Vector3.zero
 root.LocalTransparencyModifier, head.LocalTransparencyModifier = 0.4, 0
 local render = { RenderStepped = signal() }
 local cameraTween, active, reduced = nil, false, false
-local inspection = h:load("src/GClient/Interactions/ModelInspection.luau").new({
+local inspection = h:load("src/GClient/Camera/InspectionCamera.luau").new({
 	player = player,
 	input = input,
 	workspace = world,
-	config = config,
+	config = h:load("src/GClient/Camera/ContainerViewConfig.luau"),
 	render = render,
 	blocked = function()
 		return blocked
@@ -264,7 +265,7 @@ local inspection = h:load("src/GClient/Interactions/ModelInspection.luau").new({
 	},
 })
 local savedFrame = camera.CFrame
-local client = h:load("src/GClient/Interactions/TaggedInteraction.luau").new({
+local client = h:load("src/GClient/Interaction/InteractionController.luau").new({
 	collection = collection,
 	player = player,
 	input = input,
@@ -293,7 +294,7 @@ local client = h:load("src/GClient/Interactions/TaggedInteraction.luau").new({
 client:Update()
 check(rayKind == "center" and hover, "locked aim uses center ray")
 check(
-	client.highlight ~= template and client.highlight.Parent == folder and client.highlight.Adornee == folder,
+	client.highlight ~= template and client.highlight.Parent == world and client.highlight.Adornee == folder,
 	"idle hover highlights the whole model before any drawer"
 )
 check(
@@ -302,7 +303,7 @@ check(
 )
 target = nil
 client:Update()
-check(client.highlight.Parent == nil and not client.highlight.Enabled and not hover, "leaving box removes highlight")
+check(client.highlight.Adornee == nil and not client.highlight.Enabled and not hover, "leaving box removes highlight")
 target, locked = a, false
 client:Update()
 check(rayKind == "screen", "unlocked mouse follows pointer")
@@ -330,7 +331,7 @@ h:drain()
 check(#calls == 0, "entry animation blocks accidental drawer clicks")
 cameraTween:Finish()
 client:Update()
-check(client.highlight.Parent == a, "inside inspection hover now targets individual drawer")
+check(client.highlight.Adornee == a, "inside inspection hover now targets individual drawer")
 local framed = camera.CFrame
 check(
 	framed.LookVector:Dot((camera.Focus.Position - framed.Position).Unit) > 0.999,
@@ -357,6 +358,7 @@ h:drain()
 check(#calls == 2 and calls[2][2].Revision == 0, "distinct mouse release cannot duplicate or lose the click")
 event = press(Roblox.Enum.UserInputType.Touch)
 input.WindowFocusReleased:Fire()
+cameraTween:Finish()
 input.WindowFocused:Fire()
 input.InputEnded:Fire(event, false)
 h:drain()
@@ -408,11 +410,14 @@ lastTween:Finish()
 check(outcome.Ok and (a.Position - closed.Position).Magnitude < 0.001, "next mouse click actually returns box closed")
 camera.ViewportSize = Roblox.Vector2.new(390, 844)
 render.RenderStepped:Fire()
+cameraTween:Finish()
 check(
 	(camera.CFrame.Position - camera.Focus.Position).Magnitude > (framed.Position - camera.Focus.Position).Magnitude,
 	"portrait view backs up to show all drawers"
 )
 input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.Q }, false)
+check(camera.CameraType == Roblox.Enum.CameraType.Scriptable, "exit keeps ownership until return tween finishes")
+cameraTween:Finish()
 check(
 	not active and camera.CameraType == Roblox.Enum.CameraType.Custom and camera.CFrame == savedFrame,
 	"Q closes view and restores camera"
@@ -421,6 +426,7 @@ press(Roblox.Enum.UserInputType.MouseButton1)
 local interrupted = cameraTween
 input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonB }, false)
 interrupted:Finish()
+cameraTween:Finish()
 check(
 	not active and interrupted.cancelled and camera.CFrame == savedFrame,
 	"B cancels entry without a late tween overwrite"
@@ -453,10 +459,4 @@ check(
 )
 containers:Shutdown()
 check(a:GetAttribute("DPU_ContainerId") == nil and request(a).Code == "NotReady", "shutdown cleans owned state")
-check(h:load("src/GServer/GameConfig.luau").PrototypeEnabled == false, "prototype disabled by active config")
-local source = fs.readFile("src/GClient/Prototype/PrototypeController.local.luau")
-check(
-	source:find('GetAttribute("PrototypeEnabled")', 1, true) < source:find("local Shared =", 1, true),
-	"prototype client gates imports"
-)
 print(string.format("PASS: %d container checks (mocked Roblox).", total))

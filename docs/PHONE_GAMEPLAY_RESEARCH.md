@@ -1,3 +1,5 @@
+> Historical design/research material. The generated-game implementation described here has been retired. See [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md) for active systems and deployment.
+
 # Customer-phone gameplay research
 
 Reviewed 2026-09-15. This is a research and implementation-gap review, not a claim that the proposed interactions are playable.

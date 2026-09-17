@@ -1,6 +1,6 @@
 local Harness = require("./Harness")
 local h = Harness.Environment()
-local Engagement = h:load("src/GServer/Prototype/Services/EngagementService.luau")
+local Engagement = h:load("src/GServer/Session/EmployeeService.luau")
 local total = 0
 local function check(value, label)
 	assert(value, label)

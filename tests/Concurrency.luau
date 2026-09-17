@@ -4,7 +4,6 @@ local function check(value, label)
 	assert(value, label)
 	total += 1
 end
-local core = "src/LServer/Core/"
 
 local function fixture()
 	local h = Harness.Environment()
@@ -54,7 +53,7 @@ local function fixture()
 			fn()
 		end)
 	end
-	local schema = h:load(core .. "ProfileSchema.luau")
+	local schema = h:load("src/LServer/PlayerData/ProfileSchema.luau")
 	local records = {}
 	local f = { delay = 0, records = records, operations = 0 }
 	local backend = {
@@ -96,7 +95,7 @@ local function fixture()
 			end,
 		},
 	}
-	local data = h:load(core .. "DataService.luau").new(services, h:load(core .. "Config.luau"))
+	local data = h:load("src/LServer/PlayerData/DataService.luau").new(services, h:load("src/LServer/Configuration/ServerConfig.luau"))
 	return h, data, f
 end
 

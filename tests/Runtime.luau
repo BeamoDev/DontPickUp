@@ -4,7 +4,6 @@ local function check(value, label)
 	assert(value, label)
 	total += 1
 end
-local core = "src/LServer/Core/"
 
 local function travelFixture()
 	local h = Harness.Environment()
@@ -12,7 +11,7 @@ local function travelFixture()
 	h.env.print = function(...)
 		table.insert(h.prints, table.pack(...))
 	end
-	local config = h:load(core .. "Config.luau")
+	local config = h:load("src/LServer/Configuration/ServerConfig.luau")
 	local frozen, failSave, packets = {}, {}, {}
 	local reservations, revocations = 0, 0
 	local event
@@ -73,7 +72,7 @@ local function travelFixture()
 			return revokeAllowed
 		end,
 	}
-	local travel = h:load(core .. "TravelService.luau").new(source, config, data, tickets)
+	local travel = h:load("src/LServer/Travel/TravelService.luau").new(source, config, data, tickets)
 	return h,
 		travel,
 		{
@@ -247,7 +246,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local Config = h:load(core .. "Config.luau")
+	local Config = h:load("src/LServer/Configuration/ServerConfig.luau")
 	local persistentCalls = 0
 	local s = {
 		Players = h.players,
@@ -269,7 +268,7 @@ do
 			end,
 		},
 	}
-	local data = h:load(core .. "DataService.luau").new(s, Config)
+	local data = h:load("src/LServer/PlayerData/DataService.luau").new(s, Config)
 	local a = h:player(1)
 	check(data:Load(a) and data:IsReady(a), "practice profile loads")
 	check(persistentCalls == 0 and a.Session.Persistent.Value == false, "Studio practice makes no storage calls")
@@ -330,7 +329,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local Config = h:load(core .. "Config.luau")
+	local Config = h:load("src/LServer/Configuration/ServerConfig.luau")
 	local stored = {}
 	local calls = 0
 	local map = {
@@ -346,7 +345,7 @@ do
 			return stored[id]
 		end,
 	}
-	local tickets = h:load(core .. "TicketStore.luau").new({
+	local tickets = h:load("src/LServer/Travel/TicketStore.luau").new({
 		MemoryStoreService = {
 			GetHashMap = function()
 				return map
@@ -401,74 +400,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local Config = h:load(core .. "Config.luau")
-	local a, b = h:player(1), h:player(2)
-	local roster = { Members = { ["1"] = {}, ["2"] = {} } }
-	local tickets = {
-		Claim = function()
-			return { Id = "party", Ticket = roster }
-		end,
-		Read = function()
-			return true, roster
-		end,
-	}
-	local s = {
-		Players = h.players,
-		RunService = {
-			IsStudio = function()
-				return false
-			end,
-		},
-		ReplicatedStorage = h.instance("ReplicatedStorage"),
-	}
-	local session = h:load("src/GServer/Services/GameSession.luau").new(s, Config, {
-		IsReady = function()
-			return true
-		end,
-	}, tickets)
-	check(session:Admit(a), "first arrival admitted")
-	session:Loaded(a)
-	session:Tick()
-	h:drain()
-	check(not session:IsReady(), "partial arrival blocks start")
-	check(session:Admit(b), "second arrival admitted")
-	session:Loaded(b)
-	session:Tick()
-	check(session:IsReady(), "whole loaded party can start")
-	session:Remove(b)
-	check(
-		session:IsReady() and session.state == "Ready" and session.expected["2"] == nil,
-		"departure after admission preserves the remaining party's run"
-	)
-	check(not session:Admit(b), "departed players cannot rejoin a running admission")
-	local second = h:load("src/GServer/Services/GameSession.luau").new(
-		{
-			Players = h.players,
-			RunService = s.RunService,
-			ReplicatedStorage = h.instance("ReplicatedStorage"),
-		},
-		Config,
-		{
-			IsReady = function()
-				return true
-			end,
-		},
-		tickets
-	)
-	second:Admit(a)
-	second:Loaded(a)
-	h.time += Config.ArrivalSeconds + 1
-	second:Tick()
-	check(
-		second.state == "Incomplete" and not second:IsReady(),
-		"missing arrival times out without starting partial run"
-	)
-end
-
-do
-	local h = Harness.Environment()
 	local s = { ReplicatedStorage = h.instance("ReplicatedStorage") }
-	local net = h:load(core .. "Network.luau").new(s, "Lobby")
+	local net = h:load("src/LServer/Networking/NetworkService.luau").new(s, "Lobby")
 	local calls = 0
 	net:Bind(function()
 		calls += 1
@@ -489,25 +422,10 @@ do
 	net.busy[player] = true
 	check(not net.request.OnServerInvoke(player, "GetState").Ok, "overlapping yielding requests blocked")
 	local worker = h:player(42)
-	local input = {
-		RunId = "run",
-		Action = "PuzzleInput",
-		OrderId = "phone",
-		WorkId = "task",
-		Move = 1,
-		PuzzleRevision = 0,
-	}
-	check(
-		net.request.OnServerInvoke(worker, "PrototypeAction", input).Ok,
-		"six-field puzzle intent reaches gameplay handler"
-	)
+	local input = { Token = "held", X = 0, Y = 0, Z = 1 }
+	check(net.request.OnServerInvoke(worker, "ReleaseThrow", input).Ok, "four-field throw intent reaches handler")
 	input.Extra = true
-	check(
-		not net.request.OnServerInvoke(worker, "PrototypeAction", input).Ok,
-		"puzzle payload still rejects excessive fields"
-	)
-	input.Extra = nil
-	check(not net.request.OnServerInvoke(worker, "Join", input).Ok, "ordinary requests retain four-field bound")
+	check(not net.request.OnServerInvoke(worker, "ReleaseThrow", input).Ok, "excessive fields rejected")
 end
 
 do
@@ -581,45 +499,6 @@ for count = 1, 4 do
 		for _, player in ipairs(players) do
 			check(f.frozen[player], "each profile was frozen and saved before dispatch")
 		end
-		local members = {}
-		for _, player in ipairs(players) do
-			members[tostring(player.UserId)] = {}
-		end
-		local session = h:load("src/GServer/Services/GameSession.luau").new(
-			{
-				Players = h.players,
-				RunService = f.source.RunService,
-				ReplicatedStorage = h.instance("ReplicatedStorage"),
-			},
-			f.config,
-			{
-				IsReady = function()
-					return true
-				end,
-			},
-			{
-				Claim = function()
-					return {
-						Id = "run",
-						Ticket = { Mode = mode, GameData = payload.GameData, Members = members },
-					}
-				end,
-			}
-		)
-		for i, player in ipairs(players) do
-			check(session:Admit(player), "destination admits expected member")
-			session:Loaded(player)
-			if i == count then
-				session:Tick()
-			end
-			if i < count then
-				check(not session:IsReady(), "partial arrival cannot start")
-			end
-		end
-		check(
-			session:IsReady() and session:Snapshot().GameData.Mode == mode,
-			"loaded destination uses authoritative mode and game data"
-		)
 	end
 end
 

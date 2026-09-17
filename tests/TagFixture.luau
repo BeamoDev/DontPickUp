@@ -25,6 +25,15 @@ function Fixture.Collection()
 	function service:HasTag(item, tag)
 		return tags[tag] and tags[tag][item] == true or false
 	end
+	function service:GetTags(item)
+		local result = {}
+		for tag, items in pairs(tags) do
+			if items[item] then
+				table.insert(result, tag)
+			end
+		end
+		return result
+	end
 	function service:GetTagged(tag)
 		local result = {}
 		for item in pairs(tags[tag] or {}) do

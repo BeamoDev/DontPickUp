@@ -10,11 +10,17 @@ function Harness.Environment()
 		local object
 		function methods:IsA(name)
 			return class == name
+				or (name == "LuaSourceContainer" and (class == "Script" or class == "LocalScript" or class == "ModuleScript"))
 				or (name == "GuiButton" and (class == "TextButton" or class == "ImageButton"))
-				or (name == "GuiObject" and table.find(
-					{ "Frame", "ScrollingFrame", "TextLabel", "TextButton", "ImageLabel", "ImageButton" },
-					class
-				) ~= nil)
+				or (name == "GuiObject" and table.find({
+					"Frame",
+					"ScrollingFrame",
+					"TextLabel",
+					"TextButton",
+					"ImageLabel",
+					"ImageButton",
+					"ViewportFrame",
+				}, class) ~= nil)
 				or (name == "BasePart" and class == "Part")
 		end
 		function methods:FindFirstChild(name, recursive)
@@ -45,6 +51,33 @@ function Harness.Environment()
 				end
 			end
 			return descendants
+		end
+
+		function methods:GetPivot()
+			if properties.GetPivot then
+				return properties.GetPivot(self)
+			end
+			return properties.WorldPivot or properties.CFrame or h.env.CFrame.new()
+		end
+		function methods:GetBoundingBox()
+			if properties.GetBoundingBox then
+				return properties.GetBoundingBox(self)
+			end
+			local low, high
+			for _, part in ipairs(self:GetDescendants()) do
+				if part:IsA("BasePart") and part.CFrame and part.Size then
+					for _, x in ipairs({ -0.5, 0.5 }) do
+						for _, y in ipairs({ -0.5, 0.5 }) do
+							for _, z in ipairs({ -0.5, 0.5 }) do
+								local point = part.CFrame:PointToWorldSpace(part.Size * h.env.Vector3.new(x, y, z))
+								low, high = low and low:Min(point) or point, high and high:Max(point) or point
+							end
+						end
+					end
+				end
+			end
+			return low and h.env.CFrame.new((low + high) / 2) or self:GetPivot(),
+				low and high - low or h.env.Vector3.one
 		end
 		function methods:PivotTo(frame)
 			if properties.PivotTo then
@@ -237,7 +270,7 @@ function Harness.Environment()
 		player.Parent = self.players
 		return player
 	end
-	function h:load(path, overrides)
+	function h:load(path, overrides, globals)
 		local function node(location)
 			return setmetatable({ Path = location }, {
 				__index = function(_, key)
@@ -273,6 +306,9 @@ function Harness.Environment()
 				return overrides[module]
 			end
 			return self:load(module, overrides)
+		end
+		for key, value in pairs(globals or {}) do
+			env[key] = value
 		end
 		return luau.load(fs.readFile(path), { debugName = path, environment = env, injectGlobals = true })()
 	end

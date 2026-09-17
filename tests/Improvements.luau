@@ -12,7 +12,8 @@ end
 -- Early phones teach visible matching/copying; later shifts retain easy jobs.
 do
 	local h = Harness.Environment()
-	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	require("./PrototypeAssets").Install(h)
+	local puzzles = h:load("src/GServer/Repair/RepairPuzzles.luau")
 	local laterEasy = 0
 	for seed = 1, 30 do
 		check(puzzles.IsEasy(false, 1, seed), "all first-night phones use easy tasks")
@@ -55,7 +56,7 @@ do
 		end
 	end
 	-- Stamp itself is also used after the harder tests.
-	local bench = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
+	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
 	local stamp = bench.New("Stamp", 2, 100)
 	check(puzzles.Snapshot(stamp).Hint:find("FIX IT FIRST"), "loose wire explains the required action")
 	check(not select(2, puzzles.Input(stamp, 1, stamp.Revision, 100)), "cannot mark broken phone ready")
@@ -215,7 +216,7 @@ do
 	local f = fixture()
 	f:start()
 	f.h.env.Color3 = require("@lune/roblox").Color3
-	local Adapter = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
+	local Adapter = f.h:load("src/GServer/Session/GameService.luau")
 	local world = {
 		direct = { Secret_DeskNote = true },
 		ActionFor = function()
@@ -289,8 +290,9 @@ end
 
 do
 	local h = Harness.Environment()
-	local Conversations = h:load("src/GServer/Prototype/Customers/Conversations.luau")
-	local Dialogue = h:load("src/GServer/Prototype/Services/DialogueService.luau")
+	require("./PrototypeAssets").Install(h)
+	local Conversations = h:load("src/GServer/Story/DialogueCatalog.luau")
+	local Dialogue = h:load("src/GServer/Story/DialogueService.luau")
 	local player = h:player(1)
 	local normal =
 		Conversations.Intake({ Id = "1", Kind = "Normal", Customer = "Customer", Complaint = "It is broken." }, player)
@@ -323,12 +325,16 @@ end
 -- Request serialization, correct shared-vote ID, and queued close after an in-flight reply.
 do
 	local h = Harness.Environment()
-	local Requests = h:load("src/GShared/Prototype/Networking/Requests.luau")
+	require("./PrototypeAssets").Install(h)
+	local Requests = h:load("src/GClient/Session/SessionRequests.luau")
 	local state = { RunId = "run", Order = { Id = "second" }, Vote = { OrderId = "first" } }
 	local _, payload = Requests.Payload(state, "Vote", "Hide")
 	check(payload.OrderId == "first", "vote request uses shared vote order rather than own repair")
 	local _, signalPayload = Requests.Payload(state, "Signal", "Inside")
-	check(signalPayload.Signal == "Inside" and signalPayload.Choice == nil, "preset signal sends only its allowlisted key")
+	check(
+		signalPayload.Signal == "Inside" and signalPayload.Choice == nil,
+		"preset signal sends only its allowlisted key"
+	)
 	local _, restock = Requests.Payload(state, "PuzzleInput", { WorkId = "crate", Move = 11, PuzzleRevision = 0 })
 	check(restock.OrderId == nil, "restock inputs never inherit active customer order")
 	local calls = {}
@@ -378,6 +384,7 @@ end
 do
 	local Roblox = require("@lune/roblox")
 	local h = Harness.Environment()
+	require("./PrototypeAssets").Install(h)
 	for _, key in ipairs({ "Color3", "Vector2", "Vector3", "UDim2", "Enum" }) do
 		h.env[key] = Roblox[key]
 	end
@@ -408,6 +415,11 @@ do
 	end
 	local input = {
 		InputBegan = signal(),
+		InputChanged = signal(),
+		WindowFocused = signal(),
+		GetFocusedTextBox = function()
+			return nil
+		end,
 		InputEnded = signal(),
 		WindowFocusReleased = signal(),
 		GamepadEnabled = false,
@@ -441,14 +453,13 @@ do
 		table.insert(rays, { "viewport", x, y })
 		return { Origin = Roblox.Vector3.zero, Direction = Roblox.Vector3.zAxis }
 	end
-	local world = {
-		children = {},
-		CurrentCamera = camera,
-		Raycast = function()
-			return { Instance = target }
-		end,
-	}
-	local direct = h:load("src/GClient/Prototype/Interactions/WorldInteraction.luau").new(gui, {
+	local world = h.instance("Workspace")
+	target.Parent = world
+	world.CurrentCamera = camera
+	world.Raycast = function()
+		return { Instance = target, Position = target.Position }
+	end
+	local direct = h:load("src/GClient/Interaction/WorldInteractionController.luau").new(gui, {
 		input = input,
 		workspace = world,
 		player = player,
@@ -465,7 +476,7 @@ do
 	input.InputBegan:Fire(click, false)
 	input.InputEnded:Fire(click, false)
 	check(
-		#sent == 1 and sent[1][2].Station == "Secret_DeskNote" and rays[#rays][1] == "screen",
+		#sent == 1 and sent[1][2].Station == "Secret_DeskNote" and rays[#rays][1] == "viewport",
 		"mouse sends station intent through request layer"
 	)
 	local finger = { UserInputType = Roblox.Enum.UserInputType.Touch, Position = Roblox.Vector3.new(220, 160, 0) }
@@ -478,6 +489,17 @@ do
 	finger.Position += Roblox.Vector3.new(50, 0, 0)
 	input.InputEnded:Fire(finger, false)
 	check(#sent == 2, "camera drag does not tap a world object")
+	input.InputBegan:Fire(finger, false)
+	local start = finger.Position
+	finger.Position += Roblox.Vector3.new(50, 0, 0)
+	input.InputChanged:Fire(finger)
+	finger.Position = start
+	input.InputEnded:Fire(finger, false)
+	check(#sent == 2, "camera drag returning to its start is still cancelled")
+	input.InputBegan:Fire(finger, false)
+	input.InputBegan:Fire({ UserInputType = Roblox.Enum.UserInputType.Touch, Position = start }, false)
+	input.InputEnded:Fire(finger, false)
+	check(#sent == 2, "second touch cancels the captured tap")
 	lastInput, input.GamepadEnabled = Roblox.Enum.UserInputType.Gamepad1, true
 	direct:Update({ Alive = true, Phase = "Night" }, false)
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
@@ -492,11 +514,26 @@ do
 	direct:Update({ Alive = true, Phase = "Night", Inspection = {} }, false)
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
 	check(#sent == 3 and not direct.highlight.Enabled, "reader suppresses world input and highlight")
+	local phoneModel = h.instance("Model")
+	phoneModel.Name, phoneModel.Parent = "Telephone", world
+	phoneModel:SetAttribute("DPU_Direct", "Fax")
+	phoneModel:SetAttribute("DPU_Enabled", true)
+	phoneModel:SetAttribute("DPU_Range", 8)
+	phoneModel:SetAttribute("DPU_Label", "Use telephone")
+	for _, name in ipairs({ "DPU_Direct", "DPU_Enabled", "DPU_Range", "DPU_Label" }) do
+		target:SetAttribute(name, nil)
+	end
+	target.Parent = phoneModel
+	direct:Update({ Alive = true, Phase = "Night" }, false)
+	check(direct.highlight.Adornee == phoneModel, "prototype hover resolves physical telephone children to model")
+	phoneModel:SetAttribute("DPU_Enabled", false)
+	direct:Update({ Alive = true, Phase = "Night" }, false)
+	check(not direct.highlight.Enabled, "unavailable authored model releases shared highlight")
 	direct:Destroy()
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
-	check(#sent == 3 and not direct.hint.Parent, "world input disconnects on teardown")
+	check(#sent == 3 and direct.hint.Parent ~= nil, "world input disconnects on teardown")
 	local selection = { SelectedObject = nil }
-	local reader = h:load("src/GShared/Prototype/UI/InspectionView.luau").new(gui, {
+	local reader = h:load("src/GClient/Interface/InspectionView.luau").new(gui, {
 		input = input,
 		gui = selection,
 		clock = function()
@@ -541,7 +578,7 @@ do
 	reader:Update(state, false)
 	check(not reader.panel.Visible, "hazard releases reader")
 	reader:Destroy()
-	check(not reader.panel.Parent and selection.SelectedObject == nil, "reader cleanup restores GUI selection")
+	check(reader.panel.Parent ~= nil and selection.SelectedObject == nil, "reader cleanup restores GUI selection")
 
 	-- Cursor policy must release real UI interactions without fighting station cameras.
 	h.env.UDim = Roblox.UDim
@@ -564,7 +601,7 @@ do
 		check(name == self.name, "cursor removes its own frame binding")
 		self.callback = nil
 	end
-	local cursor = h:load("src/GClient/Interactions/FirstPersonCamera.luau").new(gui, player, input, {
+	local cursor = h:load("src/GClient/Camera/CameraController.luau").new(gui, player, input, {
 		render = render,
 		needsPointer = function()
 			return needsPointer
@@ -639,7 +676,7 @@ do
 	cursor:Toggle()
 	player.CharacterAdded:Fire()
 	check(cursor:IsLocked() and not cursor.manualFree, "respawn starts with centered camera controls")
-	local centered = h:load("src/GClient/Prototype/Interactions/WorldInteraction.luau").new(gui, {
+	local centered = h:load("src/GClient/Interaction/WorldInteractionController.luau").new(gui, {
 		input = input,
 		workspace = world,
 		player = player,
@@ -655,7 +692,8 @@ do
 	)
 	cursor:Toggle()
 	centered:Pick(Roblox.Vector2.new(30, 40))
-	check(rays[#rays][1] == "screen" and rays[#rays][2] == 30, "free cursor keeps pointer targeting")
+	check(rays[#rays][1] == "viewport" and rays[#rays][2] == 30, "free cursor keeps pointer targeting")
+	target:SetAttribute("DPU_Enabled", true)
 	target:SetAttribute("DPU_Direct", "Part_Battery")
 	local pickup =
 		{ Alive = true, Phase = "Night", Order = { Step = "Collect", Fault = "Battery" }, Stock = { Battery = 1 } }
@@ -683,8 +721,8 @@ do
 	cursor:Destroy()
 	cursor:Destroy()
 	check(
-		not render.callback and not cursor.overlay.Parent and not cursor.toggle.Parent,
-		"cleanup removes dot, toggle and frame callback"
+		not render.callback and cursor.overlay.Parent ~= nil and cursor.toggle.Parent ~= nil,
+		"cleanup preserves dot and toggle and removes frame callback"
 	)
 	check(
 		player.CameraMode == Roblox.Enum.CameraMode.Classic

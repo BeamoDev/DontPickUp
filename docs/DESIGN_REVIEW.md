@@ -1,3 +1,5 @@
+> Historical design/research material. The generated-game implementation described here has been retired. See [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md) for active systems and deployment.
+
 # Repair-shop improvement plan
 
 ## Baseline inspected before implementation

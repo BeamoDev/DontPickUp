@@ -8,6 +8,9 @@
 !/docs/
 !/tests/
 !/src/
+!/common/
+!/tools/
+!/project.sources.json
 
 # Operating-system and editor files
 .DS_Store

@@ -28,10 +28,10 @@ end
 
 local function fixture()
 	local h = Harness.Environment()
-	local config = h:load("src/LServer/Core/Config.luau")
+	local config = h:load("src/LServer/Configuration/ServerConfig.luau")
 	local snapshots, history, moved, exited, ready = {}, {}, {}, {}, {}
 	local queues
-	local party = h:load("src/LServer/Parties/PartyService.luau").new({
+	local party = h:load("src/LServer/Matchmaking/PartyService.luau").new({
 		config = config,
 		clock = function()
 			return h.time
@@ -59,7 +59,7 @@ local function fixture()
 			return false, "StudioPreviewComplete"
 		end,
 	})
-	queues = h:load("src/LServer/Queues/WorldQueueService.luau").new({
+	queues = h:load("src/LServer/Matchmaking/QueueService.luau").new({
 		config = config,
 		party = party,
 		clock = function()
@@ -118,10 +118,7 @@ do
 	check(queues:Get(a).Configuring and queues:Get(a).CanLeave, "setup and exit shown to owner")
 	check(not queues:Enter(b, "one"), "second player cannot steal unfinished setup")
 	check(not queues:Create(b, 2, "Story"), "remote creation needs physical reservation")
-	check(
-		not queues:Create(a, 2, "Unknown") and not queues:Create(a, 9, "Story"),
-		"server validates mode and capacity"
-	)
+	check(not queues:Create(a, 2, "Unknown") and not queues:Create(a, 9, "Story"), "server validates mode and capacity")
 	check(
 		not queues:Create(a, 2, nil) and queues:Get(a).Configuring,
 		"missing mode cannot create a partial physical party"
@@ -137,10 +134,7 @@ do
 	queues:Tick()
 	check(party:Get(a).State == "Countdown", "full queue starts final countdown")
 	check(queues:Leave(b, false) and f.exited[b], "leave during countdown exits and blocks immediate reentry")
-	check(
-		party:Get(a).State == "Open" and f.moved[#f.moved][3] == false,
-		"leaving cancels countdown and uses ExitPos"
-	)
+	check(party:Get(a).State == "Open" and f.moved[#f.moved][3] == false, "leaving cancels countdown and uses ExitPos")
 	check(queues:Enter(b, "one"), "member may explicitly reenter after stepping clear")
 	queues:Tick()
 	h.time += f.config.CountdownSeconds
@@ -198,10 +192,7 @@ do
 	queues.d.inside = function()
 		return inside
 	end
-	check(
-		not queues:Enter(b, "one") and not party:Get(b),
-		"join rechecks physical entry after yielding lookup"
-	)
+	check(not queues:Enter(b, "one") and not party:Get(b), "join rechecks physical entry after yielding lookup")
 	queues.d.far = function()
 		return true
 	end
@@ -211,7 +202,7 @@ end
 
 do
 	local h = Harness.Environment()
-	local Geometry = h:load("src/LShared/Geometry/QueueGeometry.luau")
+	local Geometry = h:load("src/LServer/World/QueueGeometry.luau")
 	local cframe = Roblox.CFrame.new(10, 0, 0) * Roblox.CFrame.Angles(0, math.pi / 2, 0)
 	local size = Roblox.Vector3.new(8, 1, 2)
 	check(
@@ -259,7 +250,7 @@ do
 	child(panel, "TextLabel", "PlayerTitle")
 	panel.Size, panel.Position = "authored-panel-size", "authored-panel-position"
 	local created, left
-	local view = h:load("src/LShared/UI/QueueView.luau").new(gui, {
+	local view = h:load("src/LClient/Interface/QueueView.luau").new(gui, {
 		clock = function()
 			return h.time
 		end,
@@ -321,10 +312,7 @@ do
 	check(gui.DPU_Status.Visible, "queued status remains visible outside setup")
 	view:SetBusy("QueueLeave")
 	check(
-		leave.Text == "Leaving..."
-			and not leave.Active
-			and create.Title.Text == "Create"
-			and not panel.Visible,
+		leave.Text == "Leaving..." and not leave.Active and create.Title.Text == "Create" and not panel.Visible,
 		"leave pending label does not say Creating"
 	)
 	view:SetBusy(false)
@@ -424,8 +412,8 @@ do
 	character.PivotTo = function(_, cframe)
 		root.Position = cframe.Position
 	end
-	local config = h:load("src/LServer/Core/Config.luau")
-	local party = h:load("src/LServer/Parties/PartyService.luau").new({
+	local config = h:load("src/LServer/Configuration/ServerConfig.luau")
+	local party = h:load("src/LServer/Matchmaking/PartyService.luau").new({
 		config = config,
 		clock = function()
 			return h.time
@@ -446,7 +434,7 @@ do
 		end,
 	})
 	local dataReady = false
-	local world = h:load("src/LServer/Queues/QueueWorld.luau").new(
+	local world = h:load("src/LServer/World/LobbyWorldService.luau").new(
 		{ Players = h.players, RunService = {
 			IsStudio = function()
 				return true
@@ -501,9 +489,7 @@ do
 		"workspace entry moves player to EnterPos and opens setup"
 	)
 	check(
-		board.Enabled
-			and board.Title.Text == string.upper(a.DisplayName) .. "'S SHIFT"
-			and board.Players.Text == "1/4",
+		board.Enabled and board.Title.Text == string.upper(a.DisplayName) .. "'S SHIFT" and board.Players.Text == "1/4",
 		"authored billboard displays current host and count"
 	)
 	check(
@@ -543,10 +529,7 @@ do
 	check(not world.queues:Get(a).Active, "touch at overlapping ExitPos cannot immediately rejoin")
 	world:Tick()
 	h:drain()
-	check(
-		root.Position.Z == 0 and not world.queues:Get(a).Active,
-		"ExitPos overlap cannot immediately rejoin queue"
-	)
+	check(root.Position.Z == 0 and not world.queues:Get(a).Active, "ExitPos overlap cannot immediately rejoin queue")
 	check(
 		one.InQueue:FindFirstChild("DPU_1") == nil and board.Players.Text == "0/4",
 		"leave clears membership and resets billboard"
@@ -589,10 +572,7 @@ do
 	check(world.byInstance[one] == nil, "deleted workspace pad unregisters")
 	check(not enter.Touched.Connections[1].Connected, "removed pad disconnects touch listener")
 	world:Shutdown()
-	check(
-		not two.Refs.Enter.Touched.Connections[1].Connected,
-		"shutdown disconnects remaining touch listeners"
-	)
+	check(not two.Refs.Enter.Touched.Connections[1].Connected, "shutdown disconnects remaining touch listeners")
 end
 
 do
@@ -602,10 +582,7 @@ do
 	local oldEntry = queues:Get(a).EntryId
 	table.clear(f.history)
 	queues:Create(a, 4, "Story")
-	check(
-		#f.history == 1 and f.history[1].State.Configuring == false,
-		"create publishes only completed physical state"
-	)
+	check(#f.history == 1 and f.history[1].State.Configuring == false, "create publishes only completed physical state")
 	queues:Enter(b, "one")
 	queues:Enter(c, "one")
 	queues:Leave(b, false)
@@ -652,10 +629,7 @@ do
 	)
 	h.time += 5
 	party:Tick()
-	check(
-		party:Get(a).State == "Preparing",
-		"departure begins at displayed deadline without extra five seconds"
-	)
+	check(party:Get(a).State == "Preparing", "departure begins at displayed deadline without extra five seconds")
 	h:drain()
 	queues:Tick()
 	queues:Enter(a, "one")
@@ -679,7 +653,7 @@ end
 do
 	local h = Harness.Environment()
 	local active, errors, applied = nil, {}, {}
-	local requests = h:load("src/LShared/Networking/QueueRequests.luau").new({
+	local requests = h:load("src/LClient/Matchmaking/QueueRequests.luau").new({
 		clock = function()
 			return h.time
 		end,
@@ -704,17 +678,11 @@ do
 	check(not requests:Send("QueueLeave", { EntryId = "old" }), "double click cannot start duplicate request")
 	h.time += 8
 	requests:Tick()
-	check(
-		active == nil and errors[1] == "RequestTimeout",
-		"slow response releases busy UI with honest timeout"
-	)
+	check(active == nil and errors[1] == "RequestTimeout", "slow response releases busy UI with honest timeout")
 	requests:Send("QueueCreate", { EntryId = "new" })
 	local oldJob = table.remove(h.jobs, 1)
 	oldJob[1](table.unpack(oldJob[2], 1, oldJob[2].n))
-	check(
-		active == "QueueCreate" and #errors == 1,
-		"late old reply cannot clear new busy state or show stale failure"
-	)
+	check(active == "QueueCreate" and #errors == 1, "late old reply cannot clear new busy state or show stale failure")
 	check(#applied == 1, "late reply still reaches revision-filtered state handler")
 	requests:Observe({ EntryId = "new", Configuring = false })
 	check(active == nil, "server push completing create releases busy state before response")
@@ -758,7 +726,7 @@ do
 	local iconStroke = child(icon, "UIStroke", "UIStroke")
 	iconStroke.Color = Roblox.Color3.fromRGB(58, 58, 58)
 	icon.Image = "original-story"
-	local view = h:load("src/LShared/UI/QueueBillboard.luau").new(board)
+	local view = h:load("src/LServer/World/QueueBillboard.luau").new(board)
 	local state = { State = "Empty", Host = "-", Mode = "Choose a mode", Count = 0, Capacity = 4 }
 	view:Render(queue, state, h.time)
 	check(
@@ -816,10 +784,7 @@ do
 	mode = child(holder, "TextLabel", "Gamemode")
 	icon.Image = "replacement-story"
 	view:Render(queue, state, h.time)
-	check(
-		icon.Image == "endless-image",
-		"replacement ImageButton receives current mode without board replacement"
-	)
+	check(icon.Image == "endless-image", "replacement ImageButton receives current mode without board replacement")
 	queue:SetAttribute("EndlessIcon", "")
 	view:Render(queue, state, h.time)
 	check(icon.Image == "replacement-story", "empty override restores replacement's authored image")

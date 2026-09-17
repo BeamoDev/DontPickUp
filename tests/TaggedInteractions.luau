@@ -52,7 +52,7 @@ collection:AddTag(cabinet, "Container")
 collection:AddTag(cabinet2, "Container")
 collection:AddTag(fax, "Fax")
 collection:AddTag(drink, "Drink")
-local Tags = h:load("src/GShared/Interactions/InteractionTags.luau")
+local Tags = h:load("src/GShared/Interaction/InteractionTags.luau")
 check(Tags.Resolve(collection, world, drawer) == cabinet, "renamed cabinet resolves by tag")
 local found, kind = Tags.Resolve(collection, world, key)
 check(found == fax and kind == "Fax", "nested renamed fax resolves from key")
@@ -109,7 +109,7 @@ local services = {
 		end,
 	},
 }
-local service = h:load("src/GServer/Interactions/InteractionService.luau").new(services, function()
+local service = h:load("src/GServer/Interaction/InteractionService.luau").new(services, function()
 	return ready
 end)
 check(
@@ -190,6 +190,7 @@ check(math.abs(drawer2.CFrame.Position.Z + 0.8) < 0.001, "second cabinet slides 
 local input = {
 	InputBegan = signal(),
 	InputEnded = signal(),
+	InputChanged = signal(),
 	WindowFocusReleased = signal(),
 	WindowFocused = signal(),
 	PreferredInput = preferred.KeyboardAndMouse,
@@ -202,7 +203,7 @@ local input = {
 }
 world.CurrentCamera = {
 	ViewportSize = Roblox.Vector2.new(800, 600),
-	ScreenPointToRay = function()
+	ViewportPointToRay = function()
 		return { Origin = head.Position, Direction = Roblox.Vector3.new(0, 0, -1) }
 	end,
 }
@@ -212,12 +213,12 @@ world.Raycast = function()
 end
 local template, calls = instance("Highlight", "SelectionHighlight"), 0
 template.FillTransparency = 0.8
-local router = h:load("src/GClient/Interactions/TaggedInteraction.luau").new({
+local router = h:load("src/GClient/Interaction/InteractionController.luau").new({
 	player = player,
 	input = input,
 	workspace = world,
 	collection = collection,
-	config = h:load("src/GShared/Containers/ContainerConfig.luau"),
+	config = h:load("src/GShared/Interaction/ContainerConfig.luau"),
 	locked = function()
 		return false
 	end,
@@ -237,14 +238,14 @@ local router = h:load("src/GClient/Interactions/TaggedInteraction.luau").new({
 })
 router:Update()
 check(
-	router.highlight.Parent == bottle and router.highlight.FillTransparency == 0.8,
+	router.highlight.Adornee == bottle and router.highlight.FillTransparency == 0.8,
 	"drink hover clones authored selection highlight"
 )
 h.time += 0.2
 input.InputBegan:Fire({ UserInputType = Roblox.Enum.UserInputType.MouseButton1 }, false)
 h:drain()
 check(
-	calls == 1 and bottle:GetAttribute("DPU_DrinkBusy") and router.highlight.Parent == nil,
+	calls == 1 and bottle:GetAttribute("DPU_DrinkBusy") and router.highlight.Adornee == nil,
 	"click routes drink request and releases highlight before deletion"
 )
 input.InputBegan:Fire({ UserInputType = Roblox.Enum.UserInputType.MouseButton1 }, false)

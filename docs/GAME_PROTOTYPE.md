@@ -1,26 +1,10 @@
-# First playable Game prototype
+# Playable Game prototype
 
-**Currently archived:** `GServer/GameConfig.PrototypeEnabled = false`. The following describes the preserved prototype inside the three Game `Prototype` subfolders. It starts only after enabling that flag and restarting Play. Active authored-world setup is in [CONTAINERS](CONTAINERS.md).
-
-Current folder deployment and latest controls are defined in [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md). Preserve the new subfolders when syncing; older flat sibling descriptions in this historical integration detail are superseded.
-
-## Start playing
-
-Open **Game place `111652489432168`** and sync:
-
-- `src/GServer` into a container inside **ServerScriptService**. `Bootstrap.server.luau` is the only executable Script; every other file is a ModuleScript. Keep Core and the new prototype modules together.
-- `src/GClient` into **StarterPlayer.StarterPlayerScripts**. Keep the root `PrototypeController.local.luau` LocalScript and Interactions, Repair, Dialogue and Effects adapters together. Every other client source is a ModuleScript.
-- `src/GShared` into **ReplicatedStorage.GShared** in the Game place. Keep UI, Networking and Repair subfolders, including public `Repair/Definitions`; all are ModuleScripts. These modules are required by both Game roots.
-
-Press **Play**. Existing `StudioAllowDirectGame = true` admits Studio players without a Lobby teleport. Data loading and party readiness finish before training starts. The client creates `PlayerGui.DPU_PrototypeHUD`; no Game models or UI need to be authored first.
-
-The shop generates under **Workspace.DPU_Prototype**, centered at `(0, 0, 400)`. To choose its position, add a BasePart named **DontPickUpPrototypeOrigin** directly under Workspace before Play; its CFrame becomes the origin. Leave room around it for the shop/street. Existing Workspace assets are preserved.
-
-`GServer/GameConfig.PrototypeEnabled = false` prevents loading the prototype and its HUD. Shutdown restores the original Lighting values and player respawn locations. Generated runtime geometry is not a saved Studio place asset.
+The complete prototype is restored and enabled by default. Use [PROTOTYPE_RESTORATION](PROTOTYPE_RESTORATION.md) for current startup paths, deployment, switching modes and the new closing phase. The feature details below describe the recovered game; all runtime files now sit directly in flat Prototype system folders.
 
 ## Shop floor plan and placeholders
 
-The compact shop covers **44 by 42 studs**: a main shop with two independent repair benches and one back stockroom, connected by an eight-stud doorway. `GServer/Prototype/World/ShopLayout` builds the shell and a few labelled placeholders inside the owned prototype folder. Separate testing, software, records and staff rooms are removed.
+The compact shop covers **44 by 42 studs**: a main shop with two independent repair benches and one back stockroom, connected by an eight-stud doorway. `GServer/World/WorldLayout` retains the room/access definitions; the shell and props are saved under `Workspace.Prototype.DPU_Prototype`. See [authored asset binding](PROTOTYPE_ASSETS.md). Separate testing, software, records and staff rooms are removed.
 
 | Area | Contents and purpose |
 | --- | --- |
@@ -43,7 +27,7 @@ Pointer coordinates use InputObject.Position with Camera.ScreenPointToRay; both 
 
 The HUD and repair controls use off-white text, charcoal/black panels and muted amber warnings instead of neon green. Functional wire colors and the power meter's green target remain readable task signals. Normal play shows the compact shift header and objective; expanded information stays behind SHIFT INFO.
 
-Customer complaints, return lines, radio broadcasts, inspector replies and the disconnected phone feed server-issued **Dialogue** records with stable IDs and expiry times. `GClient/Prototype/Dialogue/SubtitleView` reveals text locally at 32 characters per second, labels the speaker and splits long lines into short pages. Repeated snapshots never restart typing. Reduced motion displays each page immediately. Menus, hazards, death and results hide speech; expired/old-night lines never replay. The callback exists only while a caption is active, with no per-letter remotes, input blocking or typing sound spam. On landscape phones captions sit beside the task panel.
+Customer complaints, return lines, radio broadcasts, inspector replies and the disconnected phone feed server-issued **Dialogue** records with stable IDs and expiry times. `GClient/Interface/DialogueController` reveals text locally at 32 characters per second, labels the speaker and splits long lines into short pages. Repeated snapshots never restart typing. Reduced motion displays each page immediately. Menus, hazards, death and results hide speech; expired/old-night lines never replay. The callback exists only while a caption is active, with no per-letter remotes, input blocking or typing sound spam. On landscape phones captions sit beside the task panel.
 
 Dialogue subtitles represent scripted speech; this change does not add recorded customer voice acting. Test text placement, reading speed and room lighting in Studio on desktop/mobile before tuning further.
 
@@ -61,13 +45,13 @@ The customer database contains **270 identities**: 30 original records plus 240 
 
 Lobby admission stores **GameData `{Version = 1, Mode, StartNight = 1, PartySize}`** beside the expected 1-4 player roster. TeleportData contains a public copy for presentation; GameSession trusts the server ticket, never this client-visible copy. Saved profiles are frozen/saved before departure and loaded through DataService in the destination. A partial initial arrival cannot start. After full admission, a departure removes that member while friends continue; rejoining an already-started published admission is rejected. The last living player leaving interrupts unfinished play.
 
-Sync **LServer, GServer and GClient**, including `GServer/Prototype/Shifts/ModeRules`. Use matching `Core.Config.StudioGameMode = "Story"` or `"Endless"` in both Core copies for direct Studio testing. Studio teleport preview remains print-only. Test both modes with 1, 2, 3 and 4 clients: intro, handoffs, death, partial ready, next night, disconnect, and final/new-run results. Published teleports, live saving and rendered multiplayer behavior still require Studio/application verification.
+Sync **LServer, GServer and GClient**, including `GServer/Session/ModeRules`. Use matching `Core.Config.StudioGameMode = "Story"` or `"Endless"` in both Core copies for direct Studio testing. Studio teleport preview remains print-only. Test both modes with 1, 2, 3 and 4 clients: intro, handoffs, death, partial ready, next night, disconnect, and final/new-run results. Published teleports, live saving and rendered multiplayer behavior still require Studio/application verification.
 
 ### Minimal prototype UI
 
 Content panels use black backgrounds with **0.5 transparency**, restrained off-white action accents, and transparent text labels. Ordinary play shows a small centered status header and one objective/action card. **SHIFT INFO** opens a scrollable ticket, team, earnings, keepsakes and directive view; **BACK TO WORK** closes it. Briefings, votes and results hide the ordinary HUD. Timeclock inspection and local puzzles also hide it, leaving the relevant controls. Seated work keeps a stand-up button; only fitting displays a progress bar. Urgent errors remain visible, and incidental notices stay out of close-up work.
 
-Every generated prototype sign uses **`UDim2.fromScale(3.8, 0.55)`**. Billboard scale is in world studs, so signs shrink with distance instead of keeping a fixed pixel size. They stop rendering beyond **22 studs** and remain occluded by world geometry. Authored Lobby billboards retain their existing layout. Verify readability and control placement in Studio at desktop and phone sizes; local tests cover visibility transitions, not rendered appearance.
+The copied prototype signs originally used **`UDim2.fromScale(3.8, 0.55)`**. Billboard scale is in world studs, so signs shrink with distance instead of keeping a fixed pixel size. They stop rendering beyond **22 studs** and remain occluded by world geometry. Authored Lobby billboards retain their existing layout. Verify readability and control placement in Studio at desktop and phone sizes; local tests cover visibility transitions, not rendered appearance.
 
 ### Interactive work and exploration
 
@@ -128,27 +112,27 @@ Published admission requires the reserved-server ticket. Interrupted runs do not
 
 | File | Responsibility |
 | --- | --- |
-| `GServer/Prototype/Shifts/PrototypeConfig` | Night length, customers, directive, hazards, interaction distances, work durations |
-| `GServer/Prototype/Customers/CustomerCatalog` | 270 server-only identities, 12 devices, 12 service profiles, chapter-filtered clues and shuffled decks |
-| `GServer/Prototype/Shifts/ModeRules` | Three-night Story chapters, Endless continuation, introductions, directives and capped pressure |
-| `GServer/Prototype/World/ShopLayout` | Connected room shells, asset-labelled furnishings and station room bounds |
-| `GClient/Prototype/Dialogue/SubtitleView` | Expiring typed dialogue, speaker labels, pagination and reduced-motion display |
-| `GServer/Prototype/Repair/Workshop` | Physical repair/testing Seat, authentic carried Tools, component cloning and cleanup |
-| `GServer/Prototype/Shifts/ShiftService` | Authoritative tutorial, orders, stock, work, votes, damage, results, replay |
-| `GServer/Prototype/Shifts/EndingRules` | Eight deterministic epilogues resolved only for earned personal outcomes |
-| `GServer/Prototype/World/PrototypeWorld` | Temporary shop, customers, inspector/visitor, lights, prompts, spawning |
-| `GServer/Prototype/Services/GamePrototype` | Admission/profile integration, save requests, snapshots, world adapter |
-| `GServer/Prototype/Repair/RepairTemplates` | Reusable fallback phone template, authored model cloning, owned-template cleanup |
-| `GClient/Prototype/PrototypeController` | Remotes, bounded HUD updates, spectating, request ownership, cleanup |
-| `GShared/Prototype/Repair/PhysicalRepairView`, `PhysicalRepairTasks` | Local 3D task geometry, pointer-plane dragging, gesture validation, fallback and cleanup |
-| `GClient/Prototype/Repair/RepairPresentation` | Repair camera transitions, component/objective highlight, progress, input and camera restoration |
-| `GClient/Prototype/Repair/RepairAssembly` | Local replacement-part fitting tweens and visibility restoration |
-| `GServer/Prototype/Repair/RepairTasks` | Authoritative probe, pairing, circuit, dial and timed memory rules |
-| `GServer/Prototype/Repair/BenchTasks` | Sixteen additional task rules, screw turns, meter dwell and form retesting |
-| `GShared/Prototype/Repair/BenchTaskView` | Pooled extra controls, screw faces, wave traces, meter and local speaker tones |
-| `GShared/Prototype/Repair/RepairTaskView` | Pooled task layouts, drag/tap inputs, wire connections, rotary indicators and memory cues |
-| `GClient/Prototype/Effects/ScarePresentation` | Pooled scare face, text cue, optional audio, age filtering and cleanup |
-| `GShared/Prototype/UI/PrototypeView` | Terminal HUD, directive, tickets, team vote, warnings, results, controls |
+| `GServer/Session/GameConfig` | Night length, customers, directive, hazards, interaction distances, work durations |
+| `GServer/Customers/CustomerCatalog` | 270 server-only identities, 12 devices, 12 service profiles, chapter-filtered clues and shuffled decks |
+| `GServer/Session/ModeRules` | Three-night Story chapters, Endless continuation, introductions, directives and capped pressure |
+| `GServer/World/WorldLayout` | Connected room shells, asset-labelled furnishings and station room bounds |
+| `GClient/Interface/DialogueController` | Expiring typed dialogue, speaker labels, pagination and reduced-motion display |
+| `GServer/Repair/WorkshopService` | Physical repair/testing Seat, authentic carried Tools, component cloning and cleanup |
+| `GServer/Session/ShiftService` | Authoritative tutorial, orders, stock, work, votes, damage, results, replay |
+| `GServer/Story/EndingRules` | Eight deterministic epilogues resolved only for earned personal outcomes |
+| `GServer/World/WorldService` | Temporary shop, customers, inspector/visitor, lights, prompts, spawning |
+| `GServer/Session/GameService` | Admission/profile integration, save requests, snapshots, world adapter |
+| `GServer/Repair/RepairTemplates` | Reusable fallback phone template, authored model cloning, owned-template cleanup |
+| `GClient/Session/SessionController` | Remotes, bounded HUD updates, spectating, request ownership, cleanup |
+| `GClient/Repair/PhysicalRepairView`, `PhysicalRepairTasks` | Local 3D task geometry, pointer-plane dragging, gesture validation, fallback and cleanup |
+| `GClient/Repair/RepairPresentation` | Repair camera transitions, component/objective highlight, progress, input and camera restoration |
+| `GClient/Repair/RepairAssembly` | Local replacement-part fitting tweens and visibility restoration |
+| `GServer/Repair/RepairTasks` | Authoritative probe, pairing, circuit, dial and timed memory rules |
+| `GServer/Repair/BenchTasks` | Sixteen additional task rules, screw turns, meter dwell and form retesting |
+| `GClient/Repair/BenchTaskView` | Pooled extra controls, screw faces, wave traces, meter and local speaker tones |
+| `GClient/Repair/RepairTaskView` | Pooled task layouts, drag/tap inputs, wire connections, rotary indicators and memory cues |
+| `GClient/Effects/HorrorController` | Pooled scare face, text cue, optional audio, age filtering and cleanup |
+| `GClient/Interface/HUDController` | Terminal HUD, directive, tickets, team vote, warnings, results, controls |
 
 Prompts and HUD actions both require server distance, alive/data-ready state, current order, and valid phase. One work reservation per bench prevents duplicate repairs while allowing independent jobs. Bench work also requires the server's real Seat occupancy and Humanoid seated state. Standing, moving away, disconnecting, or a disturbance cancels unfinished work. Shelf/crate interactions require being inside the parts room and within five studs; bench interactions allow six studs and require the correct room.
 
@@ -178,12 +162,12 @@ Sync **all of GServer and GClient**, including `CustomerCatalog`, `Workshop`, `R
 - Sitting hides the side cards and displays a repair panel with the fault/next step, progress bar, and stand control. Between work steps the panel remains visible without a looping tween. The bar follows the authoritative deadline, not a client-issued completion or reward. Repeated snapshots do not restart it. Evidence modals close during hazards so emergency controls remain usable.
 - Roblox `GuiService.ReducedMotionEnabled` and the existing `PlayerData.Settings.ReducedFlashes` setting suppress camera motion while retaining progress and highlights. There is no shake, strobe, blur, or permanent render callback. Camera/FOV/subject/focus are restored on release; pending tween callbacks are disconnected and ownership-checked. See Roblox's [camera API](https://create.roblox.com/docs/reference/engine/classes/Camera) and [reduced motion setting](https://create.roblox.com/docs/reference/engine/classes/GuiService#ReducedMotionEnabled).
 
-The server creates this fallback template only when it is missing:
+Keep the authored source template here (no fallback is generated):
 
 ```text
 ReplicatedStorage
-  DontPickUpTemplates
-    RepairPhone (Model; pivot at bottom center)
+  Assets
+    RepairPhonePrototype (Model; pivot at bottom center)
       Body (BasePart)
       Screen (BasePart)
       Battery (BasePart)
@@ -196,15 +180,15 @@ ReplicatedStorage
     ScareSound (optional Sound; use an audio asset owned/permitted by your experience)
 ```
 
-Your modeller can author that Model before Play. The server clones it once into `Workspace.DPU_Prototype.RepairPhone`, anchors cloned parts, disables their collisions/touch events, and preserves the source. Named component parts may be nested; they are optional. Keep a correctly placed bottom-center model pivot. Only fallback templates created by this system are removed on shutdown.
+The server reuses the saved world phones and reads visible component transparency from this source template. Keep the component names and bottom-center pivot. Authored templates and placed phones are never deleted by teardown.
 
-`Workspace.DPU_Prototype.Bench.RepairCamera` and `.RepairFocus` are Attachments defining the close-up view and focal point. Adjust them to fit a replacement phone. The default scene supplies both. Fitting clones only the diagnosed component locally, hides the original and tray, lifts the clone into alignment, then lowers it to the authored component CFrame. Late snapshots enter the remaining tween stage. Cancellation, hazards, death, reduced motion, results, and cleanup restore the captured visibility. The next Contact1/2/3/4 is highlighted while securing; absent targets fall back to the model. This uses [local-only part transparency](https://create.roblox.com/docs/reference/engine/classes/BasePart#LocalTransparencyModifier). Screws turn in the puzzle UI; authored hand rigs remain future work.
+`Workspace.Prototype.DPU_Prototype.Bench.RepairCamera` and `.RepairFocus` are Attachments defining the close-up view and focal point. Adjust them to fit a replacement phone. Retain both saved attachments. Fitting clones only the diagnosed component locally, hides the original and tray, lifts the clone into alignment, then lowers it to the authored component CFrame. Late snapshots enter the remaining tween stage. Cancellation, hazards, death, reduced motion, results, and cleanup restore the captured visibility. The next Contact1/2/3/4 is highlighted while securing; absent targets fall back to the model. This uses [local-only part transparency](https://create.roblox.com/docs/reference/engine/classes/BasePart#LocalTransparencyModifier). Screws turn in the puzzle UI; authored hand rigs remain future work.
 
 ## Optional activities, scares, and endings
 
 ## Randomized night and scare debugging
 
-Production uses `GServer/Prototype/Anomalies/EventDirector`. Tutorial is safe, then the first **90 seconds after midnight** contain no director events or jumpscares (including the radio). The first interruption occurs after another 0-15 seconds and is harmless. Existing fixed timestamps apply only when `PrototypeConfig.Director.Enabled = false`.
+Production uses `GServer/Horror/EventDirector`. Tutorial is safe, then the first **90 seconds after midnight** contain no director events or jumpscares (including the radio). The first interruption occurs after another 0-15 seconds and is harmless. Existing fixed timestamps apply only when `GameConfig.Director.Enabled = false`.
 
 - Randomized types: **Knocks**, **Shadow**, **DeadAir**, **Blackout**, **Call**, **Inspection**, **Visitor**. Minor event expiry itself never deals damage; a separately announced later attack scare can injure its chosen target. Knocks play at the staff door; dead air plays at the radio; shadows appear outside the window.
 - Decisions choose weighted events, duration, and a 28-52 second next interval. Active events/recovery postpone the next decision; quiet rolls can skip one. No consecutive identical event; each kind has an 85-second cooldown. Visitors cannot occur before 180 seconds. Higher suspicion increases inspection weight.
@@ -216,12 +200,12 @@ Production uses `GServer/Prototype/Anomalies/EventDirector`. Tutorial is safe, t
 
 - A scheduled/radio jumpscare now queues one **25 HP** server hit at dispatch +0.6 seconds; its visual cue starts at +0.25 seconds. The victim stands up and their own work/focus closes. Unrelated teammate work continues. The hit records an eight-second injury notice, updates Humanoid health, and uses normal death, carried-part recovery, spectator and ending settlement if HP reaches zero. Existing hazard damage remains its own single hit; its accompanying scare does not apply extra damage. Shelter protects staff from visitor attack cues during the shelter event.
 - Damage is independent of client rendering, menu visibility or reduced-motion settings. Duplicate ticks/health callbacks cannot repeat an impact. Departures, results and new nights discard unprocessed hits. A new scare cannot dispatch too close to dawn to resolve its hit. There is no client damage/completion remote. Death results include the actual cause.
-- `GServer/Prototype/Anomalies/OutdoorRisk` runs per player through the existing server tick, checking world position at most once a second. `PrototypeWorld:Outside` checks the avatar against the shop's local bounds (including roof height) with a one-stud doorway tolerance; translated/rotated shop origins work. Missing/dead characters and spectators cannot accumulate exposure. No client claims determine whether someone is outside.
+- `GServer/Horror/OutdoorRisk` runs per player through the existing server tick, checking world position at most once a second. `PrototypeWorld:Outside` checks the avatar against the shop's local bounds (including roof height) with a one-stud doorway tolerance; translated/rotated shop origins work. Missing/dead characters and spectators cannot accumulate exposure. No client claims determine whether someone is outside.
 - After the calm opening and first director interruption, outside exposure has **12 seconds of grace**, then a roll every **8 seconds**. Chance starts at **12%**, adds **0.8 percentage points per exposed second after grace**, and caps at **65%**. Future rolls/chances stay private. No random rolls happen every frame, during grace or while another event blocks arming.
 - A successful roll starts a visible **seven-second escape countdown** and points to the staff door. Entering the shop before the sampled deadline cancels the threat. Staying outside commits an attack for **35 HP** before night second 180 or **100 HP** afterward. Escapes/attacks have a **30-second personal cooldown**. Indoor teammates are unaffected. Active outdoor countdowns postpone new shared disturbances; they do not pause another staff member's normal repair or earn rewards.
-- Tuning lives in `PrototypeConfig.ScareDamage`, `ScareImpactDelay`, and `OutsideRisk`. Keep the tutorial/calm gates and reaction window. Debug output now also includes outdoor COMING/CANCELLED and one HIT line with remaining HP. Ordinary knocks/shadows and the first false alarm remain atmospheric warnings without a damage jump effect.
+- Tuning lives in `GameConfig.ScareDamage`, `ScareImpactDelay`, and `OutsideRisk`. Keep the tutorial/calm gates and reaction window. Debug output now also includes outdoor COMING/CANCELLED and one HIT line with remaining HP. Ordinary knocks/shadows and the first false alarm remain atmospheric warnings without a damage jump effect.
 
-`PrototypeConfig.DebugScares = true` logs in Studio. `DebugScaresInLive = false` keeps published diagnostics off. Expected Output:
+`GameConfig.DebugScares = true` logs in Studio. `DebugScaresInLive = false` keeps published diagnostics off. Expected Output:
 
 ```text
 [DPU][Scare] COMING kind=Signal player=PlayerName in=2.75s
@@ -234,8 +218,8 @@ Scares use a pooled hooded face with teeth, one 0.14-second viewport-camera lung
 Performance checks cover zero idle assembly scene lookups, zero extra calm-period random rolls, and reuse of prompt bindings across twenty puzzle/profile revisions. The director, audio beats and expiry reuse existing bounded ticks; no new permanent render loop or per-frame network messages. These checks do not measure real frame time.
 
 - Open/close the staff door. After clock-in, tune three radio channels and switch the bench light, including between customers or during disturbances. Records on the counter activate for inspections. Restocking between customers fills the lowest shelf, two units at a time, up to eight. Activities do not grant repairs, money, or evidence unlocks.
-- Night damage can trigger a brief personal scare. The dead-air radio channel can trigger once per staff member per night. A shared 20-second personal cooldown prevents stacking; training is safe. Scares use one generated low-poly face in a [ViewportFrame](https://create.roblox.com/docs/reference/engine/classes/ViewportFrame), never the world camera. Old snapshots are discarded and repeated IDs do not replay. The normal effect lasts 0.8 seconds; reduced motion/flashes shows silent text for 1.5 seconds. Menus clear it.
-- Add `ReplicatedStorage.DontPickUpTemplates.ScareSound` before Play to replace the default impact audio. The local clone uses at most 0.6 volume multiplied by MasterVolume and is destroyed when the cue ends; the authored Sound is preserved. Default impact/anomaly Sounds are reused and stopped between cues.
+- Night damage can trigger a brief personal scare. The dead-air radio channel can trigger once per staff member per night. A shared 20-second personal cooldown prevents stacking; training is safe. Scares reuse the saved low-poly face in a [ViewportFrame](https://create.roblox.com/docs/reference/engine/classes/ViewportFrame), never the world camera. Old snapshots are discarded and repeated IDs do not replay. The normal effect lasts 0.8 seconds; reduced motion/flashes shows silent text for 1.5 seconds. Menus clear it.
+- Add `ReplicatedStorage.Assets.ScareSound` before Play to replace the default impact audio. The local clone uses at most 0.6 volume multiplied by MasterVolume and is destroyed when the cue ends; the authored Sound is preserved. Default impact/anomaly Sounds are reused and stopped between cues.
 - Eight Story conclusions appear above the result stats. Priority is **Missing Employee** for death; for survivors at the end of night five, **The Line Is Still Open** if anyone answered, **Under Observation** at suspicion 50+, **The Night Archivist** after all three personal keepsakes, **After-hours Witness** after Investigate, **Civilian Protector** after Hide, **Loyal Employee** after Report, otherwise **Another Morning**. Decisions and discoveries accumulate across the short arc.
 - Ending IDs use `RecordOutcome` and `Progress.Endings`; no schema change or reward remote. Dead teammates retain their personal death ending. Endless and interrupted survivors receive no Story ending. Next-night readiness preserves the run; NEW RUN clears it.
 
@@ -255,8 +239,8 @@ Revenue, stock, suspicion, orders, and team decisions are **run-local**. This do
 
 ## Limits and checks
 
-This is a generated-shop prototype with a short five-night Story and continuing Endless nights. The larger authored campaign, additional repair hardware and persistent shared checkpoints remain future work. Characters, props, repairs and clues are temporary. Authored assets can replace the world adapter later.
+This is a saved-scene prototype with a short five-night Story and continuing Endless nights. The larger authored campaign, additional repair hardware and persistent shared checkpoints remain future work. Characters, props, repairs and clues are temporary. The world adapter now binds the copied Studio assets.
 
-Run all six suites in README. The prototype suite includes 24 seeds per new task, stale-input rejection, task-chain completion, UI bindings, meter timing, prompt durations, and 1-4-player handoffs. `tests/Prototype.luau` covers complete survival, death/shelter, training, work cancellation, duplicate rewards/parts, voting, outcomes, interruption, replay, and generated world/UI bindings. Adapter tests use mocked services/instances and real vector math; they do not render Roblox.
+Run all 24 suites using `tests/Run.ps1`, as documented in README. The prototype suite includes 24 seeds per new task, stale-input rejection, task-chain completion, UI bindings, meter timing, prompt durations, and 1-4-player handoffs. `tests/Prototype.luau` covers complete survival, death/shelter, training, work cancellation, duplicate rewards/parts, voting, outcomes, interruption, replay, and authored world/UI bindings. Adapter tests use mocked services/instances and real vector math; they do not render Roblox.
 
 Still test in Studio: scare-to-damage timing, outdoor escape near doorway boundaries, lethal outcome and reduced-motion/menu behavior with 1-4 clients, overhead portrait/landscape framing, local avatar/accessory restoration, 3D drag alignment and button fallback, screw/scrub gestures, physical-to-fitting visibility handoff, room routes and doorway clearance with real avatars, subtitle pagination/overlap, shared repair/testing-seat handoffs and camera restoration, audible speaker pitches, mobile drag targets, wave/meter readability, native prompt holds, four-screw closure, spawn/directive, doorway access and shelf reach, Tool grip/equipping, actual Seat occupancy, full solo repair, two-client part delivery, restocking, NPC movement, paused approaches, shelter geometry, lighting/clock, death/respawn/spectating, replay, mobile landscape text, and Output. Test every component highlight; Q/B/touch/jump exit; movement, menu, death and hazard cancellation; camera replacement; reduced motion; and back-to-back repairs. Use MicroProfiler and network statistics with multiple clients and a lower-end mobile device. Verify real saves and Lobby return separately in published clients. Physical behavior follows Roblox's [Seat API](https://create.roblox.com/docs/reference/engine/classes/Seat) and [Tool API](https://create.roblox.com/docs/reference/engine/classes/Tool).

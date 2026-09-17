@@ -45,7 +45,7 @@ h.env.TweenInfo = {
 		return {}
 	end,
 }
-local config = h:load("src/GShared/Telephone/TelephoneConfig.luau")
+local config = h:load("src/GClient/Effects/TelephoneConfig.luau")
 local origin, size = Roblox.CFrame.new(8.572, 0.768, 34.802), Roblox.Vector3.new(3, 0.8, 2)
 local viewport = Roblox.Vector2.new(1280, 720)
 local frame, focus = config.CameraFrame(origin, origin, size, viewport)
@@ -124,6 +124,7 @@ end
 local input = {
 	InputBegan = signal(),
 	InputEnded = signal(),
+	InputChanged = signal(),
 	WindowFocusReleased = signal(),
 	WindowFocused = signal(),
 	PreferredInput = preferred.KeyboardAndMouse,
@@ -160,7 +161,7 @@ local tweens = {
 local active, menu, reduced = false, false, false
 local template = h.instance("Highlight")
 template.FillTransparency = 0.7
-local telephone = h:load("src/GClient/Telephone/TelephoneInteraction.luau").new({
+local telephone = h:load("src/GClient/Effects/PhysicalTelephoneController.luau").new({
 	collection = collection,
 	player = player,
 	input = input,
@@ -184,6 +185,26 @@ local telephone = h:load("src/GClient/Telephone/TelephoneInteraction.luau").new(
 		active = value
 	end,
 })
+-- Isolated keypad tests drive the same entry methods owned by InteractionController.
+input.InputBegan:Connect(function(...)
+	telephone:InputBegan(...)
+end)
+input.InputChanged:Connect(function(...)
+	telephone:InputChanged(...)
+end)
+input.InputEnded:Connect(function(...)
+	telephone:InputEnded(...)
+end)
+input.WindowFocusReleased:Connect(function()
+	telephone.focused = false
+	telephone:Close()
+end)
+input.WindowFocused:Connect(function()
+	telephone.focused = true
+end)
+player.CharacterAdded:Connect(function()
+	telephone:Close(true)
+end)
 check(
 	telephone:Target({ Instance = model.Key1, Position = origin.Position }, root) == model,
 	"key/body hit selects containing Telephone model"
@@ -208,7 +229,7 @@ check(label.Text == "", "keypad waits until camera finishes")
 tween:Finish()
 telephone:Update()
 check(
-	telephone.highlight.Parent == model.Key1 and telephone.highlight.FillTransparency == 0.7,
+	telephone.highlight.Adornee == model.Key1 and telephone.highlight.FillTransparency == 0.7,
 	"hover clones authored highlight on physical key"
 )
 local function tap(kind, drag)
@@ -249,7 +270,58 @@ end
 check(#label.Text == config.MaxDigits, "phone input has bounded length")
 telephone:Enter("Dial")
 check(label.Text == "NOT CONNECTED", "dial is explicitly unconnected rather than a fake call")
+-- Recognised numbers expose call state for a future subtitle renderer.
+local notifications = {}
+telephone.d.callChanged = function(state)
+	table.insert(notifications, state)
+end
+telephone:Enter("Clear")
+telephone:Enter("6")
+telephone:Enter("7")
+telephone:Enter("Dial")
+check(
+	label.Text == "DIALING 67" and #notifications == 1 and notifications[1].Phase == "Dialing",
+	"67 starts an easter-egg call"
+)
+telephone:Enter("Dial")
+check(#notifications == 1, "repeat Dial cannot start a duplicate call")
+h.time += 1
+telephone:Update()
+telephone:Update()
+check(
+	label.Text == "CONNECTED 67" and #notifications == 2 and notifications[2].SubtitleKey == "Fax.SixSeven",
+	"connection emits exactly one future-subtitle hook"
+)
+telephone:Enter("9")
+check(label.Text == "CONNECTED 67", "digits cannot replace an active call")
+input.PreferredInput = preferred.KeyboardAndMouse
+target = model.End
+tap(Roblox.Enum.UserInputType.MouseButton1, false)
+check(
+	telephone.call == nil and notifications[3].Phase == "Ended" and active,
+	"physical End hangs up without closing inspection"
+)
+telephone:Enter("6")
+telephone:Enter("7")
+telephone:Enter("Dial")
+local nextCall = notifications[#notifications].SessionId
+check(nextCall ~= notifications[1].SessionId, "repeated number uses a fresh subtitle/call identity")
+target = model.KeyClose
+tap(Roblox.Enum.UserInputType.MouseButton1, false)
+check(
+	telephone.call == nil and notifications[#notifications].Phase == "Ended",
+	"physical KeyClose ends dialing and exits through the camera close path"
+)
+local notificationCount = #notifications
+h.time += 1
+telephone:Update()
+check(#notifications == notificationCount, "closed calls cannot emit a late Connected event")
 telephone:Enter("Close")
+check(
+	camera.CameraType == Roblox.Enum.CameraType.Scriptable and not telephone:Ready(),
+	"phone return tween blocks input"
+)
+tween:Finish()
 check(
 	not active
 		and camera.CameraType == Roblox.Enum.CameraType.Custom
@@ -266,7 +338,9 @@ check(root.LocalTransparencyModifier == 0.4, "close restores exact local charact
 telephone:Open(model)
 local interrupted = tween
 input.WindowFocusReleased:Fire()
+tween:Finish()
 interrupted:Finish()
+tween:Finish()
 check(
 	not active and interrupted.cancelled and camera.CFrame == savedFrame,
 	"focus loss cancels tween without late camera overwrite"
@@ -299,7 +373,7 @@ input.InputBegan:Fire({ KeyCode = Roblox.Enum.KeyCode.One }, false)
 check(not active and label.Text == "AUTHORED TEXT", "teardown releases camera, screen and input")
 
 -- The existing idle picker routes Telephone selection without a second raycast/remote.
-local router = h:load("src/GClient/Interactions/TaggedInteraction.luau")
+local router = h:load("src/GClient/Interaction/InteractionController.luau")
 local calls = 0
 local fakePhone = {
 	IsTelephone = function(_, item)
@@ -322,6 +396,125 @@ local bridge = setmetatable({
 	},
 	focused = true,
 }, router)
+bridge.Update = function() end
 bridge:Send(model)
 check(calls == 1 and bridge.pending == nil, "telephone selection stays local and does not send a container request")
+-- The prototype reuses the physical keypad/camera with server-confirmed ticket calls.
+local scene = child("Folder", "Prototype", world)
+local shop = child("Folder", "DPU_Prototype", scene)
+model.Name, model.Parent = "Fax", shop
+local sent, cursor = {}, {}
+reduced = false
+local pickup = h:load("src/GClient/Effects/TelephoneController.luau").new({
+	player = player,
+	input = input,
+	workspace = world,
+	collection = collection,
+	tweens = tweens,
+	render = render,
+	reduced = function()
+		return reduced
+	end,
+	menuOpen = function()
+		return menu
+	end,
+	template = function()
+		return template
+	end,
+	clock = function()
+		return h.time
+	end,
+	send = function(action, payload)
+		table.insert(sent, { action, payload })
+	end,
+	cursor = function(returning)
+		table.insert(cursor, returning)
+	end,
+})
+local raised, lowered = 0, 0
+local legacy = child("Model", "Telephone", scene)
+check(not pickup.phone:IsTelephone(legacy), "obsolete sibling Telephone is not an active pickup target")
+check(pickup.phone:IsTelephone(model), "nested authored Fax is the physical telephone")
+pickup.phone.receiver = {
+	Raise = function(_, object)
+		check(object == model, "pickup raises the authored receiver")
+		raised += 1
+	end,
+	Lower = function()
+		lowered += 1
+	end,
+	Update = function() end,
+	Clear = function() end,
+}
+local state = {
+	Alive = true,
+	Phase = "Night",
+	Fax = { Id = "visit1", EndsAt = h.time + 90, Tickets = { { Ticket = "123456", Step = "ReadyForPickup" } } },
+}
+pickup:Update(state, false, false)
+check(
+	pickup:OwnsInput() and pickup:NeedsPointer() and root.Anchored,
+	"physical pickup anchors and tweens into inspection"
+)
+check(label.Text:find("123456") and surface.Enabled, "ready ticket number appears on the authored phone screen")
+check(#sent == 0, "opening the physical screen adds no keypad request")
+tween:Finish()
+pickup.phone:Activate(model.Dial)
+check(label.Text == "ENTER SIX DIGITS" and #sent == 0, "incomplete ticket is rejected locally")
+for digit in ("1234567"):gmatch(".") do
+	pickup.phone:Activate(model["Key" .. digit])
+end
+check(pickup.phone.digits == "123456" and label.Text == "123456", "physical keypad caps pickup tickets at six digits")
+pickup.phone:Activate(model.Dial)
+pickup.phone:Activate(model.Dial)
+check(
+	#sent == 1 and sent[1][1] == "DialTicket" and sent[1][2].Ticket == "123456" and sent[1][2].FaxId == "visit1",
+	"one physical dial sends one visit-scoped request"
+)
+check(raised == 0, "receiver waits for authoritative call acceptance")
+state.Fax.CallSerial, state.Fax.CalledTicket, state.Fax.Message = 1, "123456", "Called Mara. They are on the way!"
+pickup:Update(state, false, false)
+pickup:Update(state, false, false)
+check(raised == 1 and pickup.phone.call and label.Text == "DIALING 123456", "matching server call raises receiver once")
+h.time += 1
+pickup:Step()
+check(label.Text == state.Fax.Message, "confirmed pickup message uses physical display")
+pickup.phone:Activate(model.End)
+check(
+	not pickup.phone.call and lowered > 0 and pickup:OwnsInput(),
+	"physical End lowers receiver and keeps keypad open"
+)
+for digit in ("123456"):gmatch(".") do
+	pickup.phone:Activate(model["Key" .. digit])
+end
+pickup.phone:Activate(model.Dial)
+pickup.phone:Activate(model.KeyClose)
+check(
+	#sent == 3 and sent[3][1] == "CloseFax" and sent[3][2].FaxId == "visit1",
+	"KeyClose sends one close even while dial is pending"
+)
+check(
+	pickup:OwnsInput() and not pickup:NeedsPointer() and cursor[#cursor],
+	"close relocks cursor while return tween owns input"
+)
+state.Fax.CallSerial = 2
+pickup:Update(state, false, false)
+check(raised == 1 and not pickup.phone.call, "late accepted call cannot raise receiver after closing")
+tween:Finish()
+check(
+	not pickup:OwnsInput() and not root.Anchored and camera.CFrame == savedFrame,
+	"pickup restores anchored state and original camera after exit"
+)
+pickup:Update(state, false, false)
+check(not pickup:OwnsInput() and #sent == 3, "old server visit cannot reopen or send duplicate close")
+state.Fax = { Id = "visit2", EndsAt = h.time + 90 }
+pickup:Update(state, false, false)
+tween:Finish()
+pickup:Error("TicketNotFound")
+check(label.Text == "TICKET NOT FOUND", "server errors appear on physical screen")
+state.Fax = nil
+pickup:Update(state, false, false)
+tween:Finish()
+check(not pickup:OwnsInput() and label.Text == "AUTHORED TEXT", "expired visits close and restore authored screen")
+pickup:Destroy()
 print(string.format("PASS: %d telephone camera/keypad checks (mocked Roblox).", total))

@@ -187,7 +187,7 @@ do
 		"exposed player dies while sheltered teammate survives"
 	)
 	check(not f:act("Restock", f.p[1]), "dead/respawned player cannot work")
-	check(not f.run:CanReturn(f.p[1]), "dead player waits for team results to preserve party admission")
+	check(f.run:CanReturn(f.p[1]), "settled dead player can return to Lobby without ending the surviving team run")
 	f.run:Damage(f.p[1], 100, "second death callback")
 	check(
 		#f.records[f.p[1]] == 1 and not f.records[f.p[1]][1].Survived,
@@ -274,7 +274,7 @@ do
 	f:start()
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Session/GameService.luau")
 	local prototype = setmetatable({ run = f.run }, prototypeClass)
 	local stranger = f.h:player(99)
 	local response = prototype:Request(stranger, "GetPrototype", {})
@@ -494,7 +494,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/Prototype/Customers/CustomerCatalog.luau")
+	require("./PrototypeAssets").Install(h)
+	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
 	local ids, normal = {}, 0
 	check(#catalog.Customers == 270, "customer database contains 270 unique records")
 	for _, customer in ipairs(catalog.Customers) do
@@ -553,7 +554,7 @@ do
 	check(f.run.revision > before and not f.run.stations.Bench.work, "work completion publishes immediately")
 	local Roblox = require("@lune/roblox")
 	f.h.env.Color3 = Roblox.Color3
-	local prototypeClass = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
+	local prototypeClass = f.h:load("src/GServer/Session/GameService.luau")
 	local pushes = 0
 	f.run.dialogueChannel:Clear()
 	f.run.dialogue = nil
@@ -581,6 +582,7 @@ end
 do
 	local Roblox = require("@lune/roblox")
 	local h = Harness.Environment()
+	require("./PrototypeAssets").Install(h)
 	for _, key in ipairs({ "Color3", "Vector3", "Vector2", "CFrame", "UDim", "UDim2" }) do
 		h.env[key] = Roblox[key]
 	end
@@ -642,6 +644,9 @@ do
 		end,
 	}
 	local workspace = h.instance("Workspace")
+	workspace.Raycast = function()
+		return nil
+	end
 	workspace.GetServerTimeNow = function()
 		return h.time
 	end
@@ -657,6 +662,8 @@ do
 	}
 	local tweens = 0
 	local services = {
+		Workspace = workspace,
+		CollectionService = require("./TagFixture").Collection(),
 		Players = h.players,
 		ReplicatedStorage = h.instance("ReplicatedStorage"),
 		Lighting = lighting,
@@ -664,21 +671,31 @@ do
 			Create = function(_, target, _, properties)
 				tweens += 1
 				return {
+					Completed = signal(),
 					Cancel = function() end,
 					Play = function()
 						for key, value in pairs(properties) do
 							target[key] = value
+							if target.GetPropertyChangedSignal then
+								target:GetPropertyChangedSignal(key):Fire()
+							end
 						end
 					end,
 				}
 			end,
 		},
 	}
-	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau")
-	local world = h:load("src/GServer/Prototype/World/PrototypeWorld.luau").new(services, config)
+	h.env.RaycastParams = {
+		new = function()
+			return {}
+		end,
+	}
+	require("./CustomerFixture").Install(h)
+	local config = h:load("src/GServer/Session/GameConfig.luau")
+	local world = h:load("src/GServer/World/WorldService.luau").new(services, config)
 	check(
-		workspace.DPU_Prototype and world.spawn.Parent == world.folder,
-		"prototype builds isolated shop and staff spawn"
+		workspace.Prototype.DPU_Prototype == world.folder and world.spawn.Parent == world.folder,
+		"prototype binds saved shop and staff spawn"
 	)
 	check(
 		world.stations.Counter and world.stations.Bench and world.stations.Stock and world.stations.Shelter,
@@ -722,13 +739,13 @@ do
 		world.folder.RightWallFront and world.folder.RightWallBack and not world.folder:FindFirstChild("RightWall"),
 		"staff doorway replaces the solid side wall"
 	)
-	local template = services.ReplicatedStorage.DontPickUpTemplates.RepairPhone
+	local template = services.ReplicatedStorage.Assets.Devices.Phone
 	check(
 		world.repairPhone ~= template and world.repairPhone:FindFirstChild("Battery"),
 		"phone is cloned from reusable component template"
 	)
 	check(
-		template.Body.CFrame.Position.X == 0 and world.repairPhone.Body.CFrame.Position.Z == 399,
+		template.Phone.CFrame.Position.X == 0 and world.repairPhone.Phone.CFrame.Position.Z == 399,
 		"placing a phone preserves the source template pivot"
 	)
 	check(
@@ -736,7 +753,9 @@ do
 		"repair components create no touch events or physical collisions"
 	)
 	for _, station in pairs(world.stations) do
-		station.Position = station.CFrame.Position
+		if station:IsA("BasePart") then
+			station.Position = station.CFrame.Position
+		end
 	end
 	local p = h:player(1)
 	local character = h.instance("Model")
@@ -784,8 +803,8 @@ do
 			and actual:IsA("Tool")
 			and not actual.CanBeDropped
 			and not actual.Handle.Anchored
-			and actual.Handle.Size == world.repairPhone.Battery.Size,
-		"tool has a physical non-droppable handle cloned from the phone component"
+			and actual.Handle.Size == world.stations.Part_Battery.Size,
+		"tool has a physical non-droppable handle cloned from the Storage pickup"
 	)
 	check(
 		world.repairPhone.Battery.Anchored and world.workshop:HasPart(p, record),
@@ -815,21 +834,88 @@ do
 	check(not world:Near(p, "Records"), "records cannot be read from the stockroom")
 	root.Position = world.origin * Roblox.Vector3.new(5.5, 3, -10)
 	check(world:Near(p, "Records"), "inspection records are accessible on the counter")
+	local appearances = services.ReplicatedStorage.Assets.NPC:GetChildren()
+	local Templates = h:load("src/GShared/Customers/CustomerTemplates.luau")
+	check(
+		appearances[1].Name == appearances[2].Name
+			and appearances[1]:GetAttribute(Templates.Attribute) ~= appearances[2]:GetAttribute(Templates.Attribute),
+		"duplicate NPC names receive distinct appearance identities"
+	)
+	local appearanceId = appearances[2]:GetAttribute(Templates.Attribute)
+	check(
+		Templates.Find(services.ReplicatedStorage, appearanceId) == appearances[2],
+		"portrait lookup resolves the exact duplicate-name template"
+	)
+	for _ = 1, 30 do
+		check(
+			Templates.Find(services.ReplicatedStorage, world:ChooseAppearance()) ~= nil,
+			"random customer appearance always names an authored template"
+		)
+	end
+	h.env.RaycastParams = {
+		new = function()
+			return {}
+		end,
+	}
+	local phonePart = world.telephone:FindFirstChildWhichIsA("BasePart")
+	phonePart.Position = phonePart.CFrame.Position
+	root.Position = phonePart.Position + Roblox.Vector3.new(0, 0, 3)
+	workspace.Raycast = function()
+		return nil
+	end
+	check(
+		world:Near(p, "Fax") and world.stations.Fax == workspace.Prototype.DPU_Prototype.Fax,
+		"telephone access follows the actual authored model"
+	)
+	local wall = h.instance("Part")
+	wall.CanCollide = true
+	workspace.Raycast = function()
+		return { Instance = wall, Position = phonePart.Position }
+	end
+	check(not world:Near(p, "Fax"), "physical customer calls cannot pass through actual walls")
+	workspace.Raycast = function()
+		return nil
+	end
+	root.Position = phonePart.Position + Roblox.Vector3.new(0, 0, 20)
+	check(not world:Near(p, "Fax"), "physical calls enforce server distance")
 	local fakeRun = {
+		players = {},
 		phase = "Tutorial",
 		stock = { Battery = 4 },
 		stations = {
-			Bench = { Id = "Bench", order = { Id = "1", Customer = "Mara", Step = "Waiting", Fault = "Battery" } },
+			Bench = {
+				Id = "Bench",
+				order = {
+					Id = "1",
+					Customer = "Mara",
+					AppearanceId = appearanceId,
+					Step = "Waiting",
+					Fault = "Battery",
+				},
+			},
 			Bench2 = { Id = "Bench2" },
 		},
 	}
 	world:Render(fakeRun)
 	check(
 		world.repairLanes.Bench.customer
-			and tweens == 1
+			and tweens == 0
 			and world.prompts.Counter.Enabled
 			and world.actions.Counter == "TakeOrder",
-		"customer arrives and intake prompt activates"
+		"waiting customer is placed immediately without a walking tween and intake prompt activates"
+	)
+	local arriving = world.repairLanes.Bench.customer
+	check(
+		arriving:GetAttribute(Templates.Attribute) == appearanceId and arriving.Head.Color == appearances[2].Head.Color,
+		"world customer clones the selected authored NPC"
+	)
+	check(
+		not arriving:FindFirstChild("AuthoredScript") and appearances[2]:FindFirstChild("AuthoredScript"),
+		"customer clones are sanitized without changing source NPC scripts"
+	)
+	check(
+		not arriving:FindFirstChild("Torso") and not arriving:FindFirstChild("Sign"),
+		"no generated body or customer billboard is substituted"
 	)
 	fakeRun.doorOpen, fakeRun.lampOn = true, false
 	world:Render(fakeRun)
@@ -866,6 +952,10 @@ do
 	fakeRun.stations.Bench.order.Step = "PickupArriving"
 	world:Render(fakeRun)
 	check(world.repairLanes.Bench.customer ~= nil, "callback brings customer back into the scene")
+	check(
+		world.repairLanes.Bench.customer:GetAttribute(Templates.Attribute) == appearanceId,
+		"pickup returns the same NPC appearance"
+	)
 	fakeRun.stations.Bench.order.Step = "Return"
 	world:Render(fakeRun)
 	check(
@@ -904,7 +994,7 @@ do
 	check(world.actions == actions, "twenty puzzle/profile revisions cause zero unchanged-scene prompt rebuilds")
 	local playerGui = h.instance("PlayerGui")
 	local used, lobbyCalls = nil, 0
-	local view = h:load("src/GShared/Prototype/UI/PrototypeView.luau").new(playerGui, {
+	local view = h:load("src/GClient/Interface/HUDController.luau").new(playerGui, {
 		act = function(action)
 			used = action
 		end,
@@ -947,7 +1037,7 @@ do
 	check(view:CurrentAction() == "OpenClock" and view.use.Text == "OPEN TIMECLOCK", "entry action changes to clock-in")
 	state.Focus = { Id = "clock", Station = "Timeclock" }
 	view:SetState(state)
-	check(not view.top.Visible and not view.bottom.Visible, "timeclock inspection hides the ordinary HUD")
+	check(not view.clockPanel.Visible and not view.bottom.Visible, "timeclock inspection hides the ordinary HUD")
 	state.Focus = nil
 	state.NeedsRules, state.NeedsClockIn = true, false
 	view:SetState(state)
@@ -964,10 +1054,10 @@ do
 		not view.modal.Visible and view.use.Visible and view:CurrentAction() == "TakeOrder",
 		"work HUD replaces tutorial and offers correct action"
 	)
-	view.rulesButton.Activated:Fire()
+	view:ToggleRules()
 	check(
 		view.modal.Visible
-			and not view.top.Visible
+			and not view.clockPanel.Visible
 			and not view.bottom.Visible
 			and string.find(view.modalText.Text, "Mara", 1, true) ~= nil
 			and string.find(view.modalText.Text, "ON DUTY", 1, true) ~= nil,
@@ -975,7 +1065,7 @@ do
 	)
 	view.ack.Activated:Fire()
 	check(
-		not view.modal.Visible and view.bottom.Visible and view.top.Visible,
+		not view.modal.Visible and view.bottom.Visible and view.clockPanel.Visible,
 		"closing shift info restores work controls"
 	)
 	state.Order.Step, state.Target = "Diagnose", "Bench"
@@ -991,7 +1081,7 @@ do
 	state.Notice = "Working on phone"
 	view:SetState(state)
 	check(
-		not view.top.Visible and not view.bottom.Visible and not view.warning.Visible,
+		not view.clockPanel.Visible and not view.bottom.Visible and not view.warning.Visible,
 		"puzzle owns the screen without duplicate work or notice cards"
 	)
 	view:Error("InvalidInput")
@@ -1024,12 +1114,15 @@ do
 	workspace.CurrentCamera.ViewportSize = Roblox.Vector2.new(844, 390)
 	view:Render()
 	check(
-		not view.top.Visible and not view.bottom.Visible and view.modal.Position.Y.Offset == 116,
+		not view.clockPanel.Visible and not view.bottom.Visible and view.modal.Position.Y.Offset == 116,
 		"landscape mobile hides side cards and keeps warning space above modal"
 	)
 	state.NightStartedAt, state.NightDuration, state.Phase = h.time - 60, 360, "Night"
 	view:SetState(state)
-	check(view.clock.Text == "NIGHT 01\n01:00 AM", "night clock derives from authoritative start time")
+	check(
+		view.night.Text == "NIGHT 01" and view.clock.Text == "01:00 AM",
+		"night clock derives from authoritative start time"
+	)
 	state.Outside, state.DoorOpen = { Since = h.time - 15, ThreatEndsAt = h.time + 7 }, false
 	view:SetState(state)
 	check(
@@ -1051,11 +1144,14 @@ do
 	state.Injury = nil
 	h.time += 30
 	view:Render()
-	check(view.clock.Text == "NIGHT 01\n01:30 AM", "clock advances without repeated network snapshots")
+	check(
+		view.night.Text == "NIGHT 01" and view.clock.Text == "01:30 AM",
+		"clock advances without repeated network snapshots"
+	)
 	state.TimeFrozenAt = h.time
 	h.time += 30
 	view:Render()
-	check(view.clock.Text == "NIGHT 01\n01:30 AM", "finished night freezes its displayed time")
+	check(view.night.Text == "NIGHT 01" and view.clock.Text == "01:30 AM", "finished night freezes its displayed time")
 	state.Phase, state.Outcome, state.Reason, state.Alive, state.CanReturn, state.CanReplay, state.Vote =
 		"Results", "Died", "AllDead", false, true, true, nil
 	view:SetState(state)
@@ -1077,7 +1173,7 @@ do
 	view.lobby.Activated:Fire()
 	check(lobbyCalls == 1, "confirmed return invokes lobby action")
 	view:Destroy()
-	check(not playerGui:FindFirstChild("DPU_PrototypeHUD"), "prototype UI cleanup removes only owned HUD")
+	check(playerGui:FindFirstChild("DPU_PrototypeHUD") == view.gui, "prototype UI cleanup preserves authored HUD")
 	-- Delayed tween completions exercise ownership, cancellation and restore paths.
 	local camera = h.instance("Camera")
 	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
@@ -1095,7 +1191,7 @@ do
 	local renderSignal, inputSignal = signal(), signal()
 	local reduced, menu = false, false
 	local tweenList = {}
-	local presentation = h:load("src/GClient/Prototype/Repair/RepairPresentation.luau").new({
+	local presentation = h:load("src/GClient/Repair/RepairPresentation.luau").new({
 		stand = function()
 			humanoid.Sit = false
 		end,
@@ -1184,7 +1280,7 @@ do
 	repair.Work, repair.Order.Step, repair.Order.Contacts, repair.Order.RequiredContacts = nil, "Secure", 1, 3
 	presentation:Update(repair, false)
 	check(
-		presentation.highlight.Adornee == world.repairPhone.Contact2
+		presentation.highlight.Adornee == world.repairPhone.Screws.Screw2
 			and math.abs(presentation.fill.Size.X.Scale - 1 / 3) < 0.001,
 		"tightening advances highlighted physical contact and progress"
 	)
@@ -1267,7 +1363,7 @@ do
 		"stale completion cannot restore a newer close-up"
 	)
 	presentation:Destroy()
-	local testPresentation = h:load("src/GClient/Prototype/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
+	local testPresentation = h:load("src/GClient/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
 	local testState = {
 		RunId = "testing",
 		Phase = "Night",
@@ -1296,8 +1392,8 @@ do
 	humanoid.SeatPart = world.workshop.seat
 	root.Position = world.stations.Bench.Position + Roblox.Vector3.new(0, 0, 5)
 	check(
-		camera.FieldOfView == 73 and not presentation.highlight.Parent and not presentation.card.Parent,
-		"cleanup restores camera and destroys only owned visuals"
+		camera.FieldOfView == 73 and presentation.highlight.Parent ~= nil and presentation.card.Parent ~= nil,
+		"cleanup restores camera and preserves authored visuals"
 	)
 	local after = #tweenList
 	inputSignal:Fire({ KeyCode = "KeyCode.Q" }, false)
@@ -1307,7 +1403,7 @@ do
 	local battery, tray = world.repairPhone.Battery, world.replacement
 	battery.LocalTransparencyModifier, tray.LocalTransparencyModifier = 0.2, 0.3
 	battery.Transparency, tray.Position = 0, tray.CFrame.Position
-	local assembly = h:load("src/GClient/Prototype/Repair/RepairAssembly.luau").new({
+	local assembly = h:load("src/GClient/Repair/RepairAssembly.luau").new({
 		workspace = workspace,
 		tweens = presentation.d.tweens,
 		reduced = function()
@@ -1315,6 +1411,9 @@ do
 		end,
 	})
 	repair.Work.StartedAt, repair.Work.EndsAt = h.time, h.time + 4
+	assembly:Update(repair)
+	check(not assembly.part, "authored device uses replicated fitting without duplicate local assembly")
+	world.repairPhone:SetAttribute("DPU_DeviceId", nil)
 	assembly:Update(repair)
 	local moving, lifting = assembly.part, tweenList[#tweenList]
 	check(
@@ -1367,6 +1466,7 @@ do
 	reduced = false
 	assembly:Update(repair)
 	assembly:Destroy()
+	world.repairPhone:SetAttribute("DPU_DeviceId", "Phone")
 	local lookups = 0
 	assembly.d.workspace = {
 		GetServerTimeNow = function()
@@ -1387,11 +1487,12 @@ do
 	)
 	local soundTemplate = h.instance("Sound")
 	soundTemplate.Name, soundTemplate.Volume = "ScareSound", 0.9
-	soundTemplate.Parent = services.ReplicatedStorage.DontPickUpTemplates
+	soundTemplate.Parent = services.ReplicatedStorage.Assets
 	soundTemplate.Play = function(self)
 		self.Played = true
 	end
-	local scares = h:load("src/GClient/Prototype/Effects/ScarePresentation.luau").new({
+	local ScarePresentation = h:load("src/GClient/Effects/HorrorController.luau")
+	local scares = ScarePresentation.new({
 		workspace = workspace,
 		storage = services.ReplicatedStorage,
 		tweens = presentation.d.tweens,
@@ -1405,6 +1506,8 @@ do
 			return 0.5
 		end,
 	}, playerGui)
+	local savedScareCamera = scares.camera
+	local savedScareFrame, savedScareFOV = savedScareCamera.CFrame, savedScareCamera.FieldOfView
 	local scareState = { RunId = "night", Scare = { Id = "one", Kind = "Signal", At = h.time } }
 	scares:Update(scareState)
 	check(
@@ -1415,6 +1518,22 @@ do
 	local scareTween = scares.tween
 	scares:Update(scareState)
 	check(scares.tween == scareTween, "repeated snapshots cannot replay a scare")
+	scares.d.shake = function()
+		return false
+	end
+	scares:Update(scareState)
+	check(
+		scares.lunge == nil and scares.camera.FieldOfView == 54 and scares.sound.Played,
+		"disabling camera shake stops active lunge without muting sound"
+	)
+	scareState.Scare = { Id = "static", Kind = "Signal", At = h.time }
+	scares:Update(scareState)
+	check(
+		scares.lunge == nil and scares.viewport.Visible and scares.sound.Played,
+		"camera shake off preserves static scare and audio"
+	)
+	scares.d.shake = nil
+
 	scareState.Scare = { Id = "injury", Kind = "Signal", At = h.time, Damage = 25, Fatal = false }
 	scares:Update(scareState)
 	check(string.find(scares.caption.Text, "25 HP", 1, true), "injuring scare displays its server-issued consequence")
@@ -1472,7 +1591,63 @@ do
 	check(not scares.ambient.Played, "anomaly audio stops when event ends")
 	scares:Destroy()
 	soundTemplate:Destroy()
-	check(not scares.frame.Parent, "scare cleanup destroys owned viewport and caption")
+	check(scares.frame.Parent ~= nil, "scare cleanup preserves authored viewport and caption")
+	check(
+		savedScareCamera.Parent == scares.viewport
+			and savedScareCamera.CFrame == savedScareFrame
+			and savedScareCamera.FieldOfView == savedScareFOV,
+		"scare teardown restores the borrowed camera"
+	)
+	savedScareCamera.Name, scares.viewport.CurrentCamera = "AuthoredScareCamera", nil
+	local renamedScare = ScarePresentation.new(scares.d, playerGui)
+	check(
+		renamedScare.camera == savedScareCamera and not renamedScare.ownsCamera,
+		"scare camera lookup does not depend on the name Camera"
+	)
+	renamedScare:Destroy()
+	check(
+		scares.viewport.CurrentCamera == nil,
+		"borrowed scare camera teardown restores the original nil viewport reference"
+	)
+	savedScareCamera.Parent = nil
+	local originalChildren = #scares.viewport:GetChildren()
+	local missingScare = ScarePresentation.new(scares.d, playerGui)
+	local runtimeCamera = missingScare.camera
+	check(
+		missingScare.ownsCamera
+			and runtimeCamera.Parent == scares.viewport
+			and #scares.viewport:GetChildren() == originalChildren + 1,
+		"missing scare camera creates one runtime camera without rebuilding viewport geometry"
+	)
+	missingScare:Update({ RunId = "missing-camera", Scare = { Id = "test", Kind = "Visitor", At = h.time } })
+	check(
+		missingScare.frame.Visible and missingScare.lunge and runtimeCamera.FieldOfView == 43,
+		"scare animation works with a runtime camera"
+	)
+	check(
+		camera.CFrame == original and workspace.CurrentCamera == camera,
+		"runtime scare camera never changes world camera"
+	)
+	missingScare:Destroy()
+	missingScare:Destroy()
+	check(
+		runtimeCamera.Parent == nil
+			and scares.viewport.CurrentCamera == nil
+			and #scares.viewport:GetChildren() == originalChildren,
+		"scare cleanup deletes only its own camera and is idempotent"
+	)
+	scares.viewport.CurrentCamera = camera
+	local copiedReference = ScarePresentation.new(scares.d, playerGui)
+	check(
+		copiedReference.ownsCamera and copiedReference.camera ~= camera,
+		"copied world camera reference is not borrowed by scare animations"
+	)
+	copiedReference:Destroy()
+	check(
+		scares.viewport.CurrentCamera == camera and camera.CFrame == original,
+		"copied reference is restored without modifying the world camera"
+	)
+	scares.viewport.CurrentCamera, savedScareCamera.Parent = savedScareCamera, scares.viewport
 	check(
 		world.workshop:GiveGear(p, "Tester") and world.workshop:GiveGear(p, "Screwdriver"),
 		"workshop issues separate reusable kit Tools"
@@ -1489,7 +1664,7 @@ do
 	check(counterfeit.Parent == backpack and not tester.Parent, "kit cleanup preserves unrelated tools")
 	counterfeit:Destroy()
 	local sent, args
-	local stationUi = h:load("src/GClient/Prototype/Interactions/StationInteraction.luau").new({
+	local stationUi = h:load("src/GClient/Interaction/StationInteractionController.luau").new({
 		workspace = workspace,
 		player = p,
 		tweens = presentation.d.tweens,
@@ -1550,9 +1725,12 @@ do
 	check(not stationUi.panel.Visible, "dismissed clock visit never recaptures after closing menu")
 	stationUi:Destroy()
 	reduced = false
-	check(not stationUi.panel.Parent and not stationUi.frame, "clock teardown disconnects input and camera callbacks")
+	check(
+		stationUi.panel.Parent ~= nil and not stationUi.frame,
+		"clock teardown disconnects input and camera callbacks"
+	)
 	local taskInput = { InputChanged = signal(), InputEnded = signal() }
-	local puzzleUi = h:load("src/GShared/Prototype/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
+	local puzzleUi = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function(action, payload)
 		sent, args = action, payload
 	end, {
 		input = taskInput,
@@ -1561,7 +1739,7 @@ do
 		end,
 	})
 	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
-	local puzzleRules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	local puzzleRules = h:load("src/GServer/Repair/RepairPuzzles.luau")
 	local working = {
 		Alive = true,
 		Seated = true,
@@ -1650,7 +1828,7 @@ do
 		not taskUi.dials[1].Visible and taskUi.buttons[4].Visible and taskUi.buttons[1].Text == "START",
 		"task changes reset pooled geometry and reveal circuit controls"
 	)
-	local benchRules = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
+	local benchRules = h:load("src/GServer/Repair/BenchTasks.luau")
 	local function showBench(kind, seed)
 		working.Work.Id = "extra_" .. kind
 		working.Work.Puzzle = puzzleRules.Snapshot(benchRules.New(kind, seed or 3, h.time))
@@ -1740,74 +1918,8 @@ do
 	puzzleUi:Destroy()
 	sent = nil
 	taskInput.InputEnded:Fire(finger)
-	check(sent == nil and not taskUi.root.Parent, "destroy disconnects task input and removes owned UI")
-	local subtitleRender = signal()
-	local subtitle = h:load("src/GClient/Prototype/Dialogue/SubtitleView.luau").new(playerGui, {
-		clock = function()
-			return h.time
-		end,
-		workspace = workspace,
-		render = { RenderStepped = subtitleRender },
-		reduced = function()
-			return reduced
-		end,
-	})
-	reduced = false
-	local speech = {
-		RunId = "speech",
-		Alive = true,
-		Phase = "Night",
-		Dialogue = {
-			Id = "line1",
-			Speaker = "Mara",
-			Text = "Please fix my phone. I need to make a call.",
-			ExpiresAt = h.time + 10,
-		},
-	}
-	subtitle:Update(speech, false)
-	check(
-		subtitle.panel.Visible and subtitle.line.MaxVisibleGraphemes == 0 and not subtitle.line.RichText,
-		"subtitles start safely hidden for typing"
-	)
-	h.time += 0.5
-	subtitleRender:Fire()
-	check(subtitle.line.MaxVisibleGraphemes == 16, "subtitles reveal at a readable local rate")
-	subtitle:Update(speech, false)
-	check(subtitle.line.MaxVisibleGraphemes == 16, "repeated snapshots do not restart speech")
-	reduced = true
-	subtitle:Update(speech, false)
-	check(subtitle.line.MaxVisibleGraphemes == -1, "reduced motion displays the full line immediately")
-	subtitle:Update(speech, true)
-	check(not subtitle.panel.Visible and not subtitle.frame, "menus hide subtitles and disconnect their local callback")
-	subtitle:Update(speech, false)
-	check(subtitle.panel.Visible, "unexpired dialogue resumes after a menu")
-	h.time += 11
-	subtitleRender:Fire()
-	check(not subtitle.panel.Visible and not subtitle.frame, "expired dialogue removes its callback")
-	speech.RunId, speech.Dialogue = "next-night", nil
-	subtitle:Update(speech, false)
-	check(not subtitle.panel.Visible and not subtitle.current, "new nights clear old speech")
-	reduced = false
-	speech.Dialogue = {
-		Id = "long-line",
-		Speaker = "Radio",
-		Text = "Keep the service door locked after midnight. A representative from the department will arrive before dawn. Please keep your records ready.",
-		ExpiresAt = h.time + 20,
-	}
-	speech.Work = { Puzzle = {} }
-	camera.ViewportSize = Roblox.Vector2.new(667, 375)
-	subtitle:Update(speech, false)
-	local firstPage = subtitle.line.Text
-	check(
-		#subtitle.pages > 1 and math.abs(subtitle.panel.Size.X.Scale - 0.34) < 0.0001,
-		"long dialogue paginates beside tasks on landscape phones"
-	)
-	h.time += 5
-	subtitleRender:Fire()
-	check(subtitle.line.Text ~= firstPage, "long speech advances readable pages without a gameplay click")
-	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
-	subtitle:Destroy()
-	check(not subtitle.panel.Parent, "subtitle cleanup removes its owned UI")
+	check(sent == nil and taskUi.root.Parent ~= nil, "destroy disconnects task input and preserves authored UI")
+	-- Authored subtitle integration is covered by PrototypeBindings and Dialogue.
 	-- Physical inputs use the same server tasks; rendered travel carries no authority.
 	local physicalInput = {
 		InputBegan = signal(),
@@ -1822,7 +1934,7 @@ do
 	local cameraReady, physicalCalls = true, 0
 	local physicalState = { RunId = "physical", Phase = "Night", Alive = true, Seated = true, SeatStation = "Bench" }
 	local physicalPuzzle, physicalMove, physicalPayload
-	local physical = h:load("src/GShared/Prototype/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
+	local physical = h:load("src/GClient/Repair/PhysicalRepairView.luau").new(playerGui, function(action, payload)
 		check(action == "PuzzleInput", "physical tasks use the existing scoped action")
 		physicalCalls += 1
 		physicalMove, physicalPayload = payload.Move, payload
@@ -1843,7 +1955,7 @@ do
 		end,
 	})
 	humanoid.Sit, humanoid.SeatPart = true, world.workshop.seat
-	local benchTasks = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
+	local benchTasks = h:load("src/GServer/Repair/BenchTasks.luau")
 	local function startPhysical(puzzle)
 		physicalPuzzle = puzzle
 		physicalState.Work = {
@@ -1855,7 +1967,7 @@ do
 		}
 		check(physical:Update(physicalState, false, false), "supported physical task takes over the button panel")
 	end
-	camera.ScreenPointToRay = function(_, x, y)
+	camera.ViewportPointToRay = function(_, x, y)
 		return {
 			Origin = physical.frameOfPhone:PointToWorldSpace(Roblox.Vector3.new(x, 5, y)),
 			Direction = physical.frameOfPhone:VectorToWorldSpace(Roblox.Vector3.new(0, -1, 0)),
@@ -1973,6 +2085,35 @@ do
 		physicalPuzzle.Tested[1] and physical.nodes.probe1.Label.Text == "BATTERY\n" .. physicalPuzzle.Readings[1],
 		"physical probe displays only a reading the server has revealed"
 	)
+
+	startPhysical(puzzleRules.New("Diagnose", "Speaker", 3, 4, h.time, true, false, true))
+	check(
+		physical.nodes.screw1.Spec.Source == world.repairPhone.Screws.Screw1
+			and physical.nodes.screw1.Part ~= physical.nodes.screw1.Spec.Source
+			and physical.nodes.screw1.Part.Size == world.repairPhone.Screws.Screw1.Size,
+		"physical screw gesture uses authored mesh without resizing source"
+	)
+	for index = 1, 4 do
+		local node = physical.nodes["screw" .. index]
+		gesture(node, node.Spec.Position + Roblox.Vector3.new(0.4, 0, 0))
+		acceptPhysical()
+	end
+	check(
+		physicalPuzzle.DeviceStage == "RemoveCover" and physical.nodes.screen.Spec.Source == world.repairPhone.BackCover,
+		"four authored screws lead to actual back cover"
+	)
+	gesture(physical.nodes.screen, physical.nodes.socket.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.DeviceStage == "RemoveBattery" and physical.nodes.screen.Spec.Source == world.repairPhone.Battery,
+		"dragging cover permits actual battery removal"
+	)
+	gesture(physical.nodes.screen, physical.nodes.socket.Spec.Position)
+	acceptPhysical()
+	check(
+		physicalPuzzle.DeviceStage == "Probes" and physical.hint.Text:find("PRESS TO CHECK"),
+		"actual battery removal unlocks readable diagnostics"
+	)
 	physical.mode.Activated:Fire()
 	check(not physical:Update(physicalState, false, false) and not physical.folder, "button fallback clears 3D pieces")
 	physical.mode.Activated:Fire()
@@ -1996,9 +2137,9 @@ do
 		"physical cleanup restores original phone transparency"
 	)
 	physical:Destroy()
-	check(not physical.hint.Parent and not physical.mode.Parent, "physical task teardown removes owned UI")
+	check(physical.hint.Parent ~= nil and physical.mode.Parent ~= nil, "physical task teardown preserves authored UI")
 	cameraReady = true
-	local mixed = h:load("src/GShared/Prototype/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
+	local mixed = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function() end, physical.d)
 	mixed:Update(physicalState, false, false)
 	check(
 		mixed.physical.folder and not mixed.panel.Visible,
@@ -2023,27 +2164,14 @@ do
 	mixed:Destroy()
 	world:Shutdown()
 	check(
-		not workspace:FindFirstChild("DPU_Prototype") and lighting.ClockTime == 12,
-		"world cleanup restores lighting and removes generated scene"
+		workspace.Prototype.DPU_Prototype == world.folder and lighting.ClockTime == 12,
+		"world cleanup preserves saved shop and restores lighting"
 	)
+	local template = services.ReplicatedStorage.Assets.Devices.Phone
 	check(
-		not services.ReplicatedStorage:FindFirstChild("DontPickUpTemplates"),
-		"owned fallback templates are released on shutdown"
+		h:load("src/GServer/Repair/RepairTemplates.luau").Get(services.ReplicatedStorage) == template,
+		"saved template is reused and preserved on shutdown"
 	)
-	local authored = h.instance("Folder")
-	authored.Name, authored.Parent = "DontPickUpTemplates", services.ReplicatedStorage
-	local authoredPhone = h.instance("Model")
-	authoredPhone.Name, authoredPhone.WorldPivot, authoredPhone.Parent = "RepairPhone", Roblox.CFrame.new(), authored
-	local body = h.instance("Part")
-	body.Name, body.CFrame, body.Parent = "Body", Roblox.CFrame.new(), authoredPhone
-	local placed, release = h:load("src/GServer/Prototype/Repair/RepairTemplates.luau")
-		.Build(services.ReplicatedStorage, workspace, Roblox.CFrame.new(4, 5, 6))
-	release()
-	check(
-		authoredPhone.Parent == authored and placed.Body.Position == Roblox.Vector3.new(4, 5, 6),
-		"authored phone template is preserved and cloned without requiring named components"
-	)
-	placed:Destroy()
 end
 
 -- Optional activities remain available without a customer and never award repairs.
@@ -2133,7 +2261,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local endings = h:load("src/GServer/Prototype/Shifts/EndingRules.luau")
+	require("./PrototypeAssets").Install(h)
+	local endings = h:load("src/GServer/Story/EndingRules.luau")
 	local cases = {
 		{ "missing_employee", "Died", 80, 1, { "Investigate" } },
 		{ "line_open", "Survived", 80, 1, { "Investigate" } },
@@ -2381,7 +2510,8 @@ end
 
 do
 	local h = Harness.Environment()
-	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	require("./PrototypeAssets").Install(h)
+	local puzzles = h:load("src/GServer/Repair/RepairPuzzles.luau")
 	for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 		local puzzle = puzzles.New("Repair", fault, 3)
 		local wrongMove = puzzle.Placed and (10 + (table.find(puzzle.Slots, 1) % 3 + 1)) or 7
@@ -2405,8 +2535,9 @@ end
 
 do
 	local h = Harness.Environment()
-	local Director = h:load("src/GServer/Prototype/Anomalies/EventDirector.luau")
-	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").Director
+	require("./PrototypeAssets").Install(h)
+	local Director = h:load("src/GServer/Horror/EventDirector.luau")
+	local config = h:load("src/GServer/Session/GameConfig.luau").Director
 	local signatures, hadScare = {}, false
 	for seed = 1, 32 do
 		local value, rolls = seed, 0
@@ -2504,8 +2635,9 @@ end
 
 do
 	local h = Harness.Environment()
-	local risk = h:load("src/GServer/Prototype/Anomalies/OutdoorRisk.luau")
-	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").OutsideRisk
+	require("./PrototypeAssets").Install(h)
+	local risk = h:load("src/GServer/Horror/OutdoorRisk.luau")
+	local config = h:load("src/GServer/Session/GameConfig.luau").OutsideRisk
 	local rolls, exposure = 0, {}
 	local function miss()
 		rolls += 1
@@ -2743,7 +2875,7 @@ for count = 1, 4 do
 					"unanimous ready advances with a fresh action identity"
 				)
 				f.h.env.Color3 = require("@lune/roblox").Color3
-				local adapter = f.h:load("src/GServer/Prototype/Services/GamePrototype.luau")
+				local adapter = f.h:load("src/GServer/Session/GameService.luau")
 				check(
 					adapter.Request({ run = f.run }, f.p[1], "PrototypeAction", { RunId = oldId, Action = "Replay" }).Code
 						== "ShiftChanged",
@@ -2822,9 +2954,10 @@ end
 
 do
 	local h = Harness.Environment()
-	local catalog = h:load("src/GServer/Prototype/Customers/CustomerCatalog.luau")
-	local puzzles = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
-	local modes = h:load("src/GServer/Prototype/Shifts/ModeRules.luau")
+	require("./PrototypeAssets").Install(h)
+	local catalog = h:load("src/GServer/Customers/CustomerCatalog.luau")
+	local puzzles = h:load("src/GServer/Repair/RepairPuzzles.luau")
+	local modes = h:load("src/GServer/Session/ModeRules.luau")
 	local kinds = {}
 	for _, chapter in ipairs({ "nina", "jonas", "silas" }) do
 		local deck = catalog.Deck(function(low)
@@ -2860,7 +2993,7 @@ do
 		count += 1
 	end
 	check(count >= 10, "verification labels vary independently instead of repeating six patterns")
-	local config = h:load("src/GServer/Prototype/Shifts/PrototypeConfig.luau").Director
+	local config = h:load("src/GServer/Session/GameConfig.luau").Director
 	local late = modes.Director(config, "Endless", 100)
 	check(
 		late.MaxEvents > config.MaxEvents
@@ -2935,7 +3068,8 @@ end
 -- Every new task has a bounded solution and rejects premature/stale input.
 do
 	local h = Harness.Environment()
-	local rules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	require("./PrototypeAssets").Install(h)
+	local rules = h:load("src/GServer/Repair/RepairPuzzles.luau")
 	for seed = 1, 24 do
 		for _, fault in ipairs({ "Battery", "Speaker", "Keypad" }) do
 			local probe = rules.New("Diagnose", fault, seed, 4, 100)
@@ -2997,8 +3131,9 @@ end
 
 do
 	local h = Harness.Environment()
-	local bench = h:load("src/GServer/Prototype/Repair/BenchTasks.luau")
-	local rules = h:load("src/GServer/Prototype/Repair/WorkPuzzles.luau")
+	require("./PrototypeAssets").Install(h)
+	local bench = h:load("src/GServer/Repair/BenchTasks.luau")
+	local rules = h:load("src/GServer/Repair/RepairPuzzles.luau")
 	local kinds = {
 		"Clean",
 		"Debris",
@@ -3082,6 +3217,9 @@ end
 
 do
 	local f = fixture(1)
+	f.run.d.appearance = function()
+		return "npc_selected"
+	end
 	f:start()
 	local player = f.p[1]
 	local firstLine = f.run:Snapshot(player).Dialogue
@@ -3090,6 +3228,10 @@ do
 			and firstLine.Speaker == f.run.stations.Bench.order.Customer
 			and firstLine.Text == f.run.stations.Bench.order.Complaint,
 		"customer arrival publishes current spoken complaint"
+	)
+	check(
+		firstLine.AppearanceId == "npc_selected" and f.run:Snapshot(player).Order.AppearanceId == firstLine.AppearanceId,
+		"server keeps selected customer appearance on order and spoken lines"
 	)
 	check(f.run:Snapshot(player).Dialogue.Id == firstLine.Id, "speech has stable identity between snapshots")
 	f.h.time = firstLine.ExpiresAt + 1

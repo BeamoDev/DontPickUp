@@ -8,7 +8,7 @@ return function(p, now)
 		end
 	elseif p.Kind == "Screws" then
 		for i, turns in ipairs(p.Turns) do
-			if turns < 3 then
+			if turns < (p.TurnsRequired or 3) then
 				return i
 			end
 		end

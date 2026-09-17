@@ -69,7 +69,7 @@ do
 	check(second.Ticket ~= ticket, "parallel customers get distinct tickets")
 	check(dial(second.Ticket), "same fax can call another bench's customer")
 	check(lane.order.PickupAt == arrival, "second callback leaves first arrival unchanged")
-	local stations = f.h:load("src/GServer/Prototype/Repair/RepairStations.luau")
+	local stations = f.h:load("src/GServer/Repair/RepairStations.luau")
 	f:advance(f.c.ArrivalSeconds)
 	check(lane.order.Step == "Return" and second.Step == "Return", "both owners return after calls")
 	check(f:act("Return"), "first owner receives repaired phone")
@@ -89,7 +89,7 @@ do
 	check(f:act("OpenFax"), "fax usable after hazard")
 	f:advance(91)
 	check(f.run.players[p].Fax == nil, "unused fax visit expires")
-	local pickup = f.h:load("src/GServer/Prototype/Customers/PickupService.luau")
+	local pickup = f.h:load("src/GServer/Orders/CustomerPickupService.luau")
 	local seen = {}
 	for _ = 1, 1000 do
 		local issued = pickup.Issue(f.run)
@@ -98,87 +98,4 @@ do
 	end
 end
 
--- Shared view uses one scoped call, supports all Activated inputs, and cleans up.
-do
-	local Roblox = require("@lune/roblox")
-	local h = Harness.Environment()
-	for _, name in ipairs({ "Color3", "Vector2", "UDim2", "Enum" }) do
-		h.env[name] = Roblox[name]
-	end
-	local listener, disconnected
-	local input = {
-		GamepadEnabled = true,
-		InputBegan = {
-			Connect = function(_, callback)
-				listener = callback
-				return {
-					Disconnect = function()
-						disconnected = true
-					end,
-				}
-			end,
-		},
-	}
-	local gui = h.env.Instance.new("ScreenGui")
-	local selection, sent = {}, {}
-	local view = h:load("src/GShared/Prototype/UI/FaxView.luau").new(gui, {
-		input = input,
-		gui = selection,
-		clock = function()
-			return h.time
-		end,
-		send = function(action, payload)
-			table.insert(sent, { action, payload })
-		end,
-	})
-	local state = {
-		Alive = true,
-		Phase = "Night",
-		Fax = {
-			Id = "visit",
-			EndsAt = h.time + 90,
-			Tickets = { { Ticket = "123456", Customer = "Customer", Step = "ReadyForPickup" } },
-		},
-	}
-	view:Update(state, false, false)
-	check(view.panel.Visible and selection.SelectedObject == view.first, "fax is visible and gamepad selectable")
-	view.call.Activated:Fire()
-	check(#sent == 0, "incomplete local code sends nothing")
-	for _, key in ipairs({ "1", "2", "3", "4", "5", "6", "7" }) do
-		view.panel:FindFirstChild("Key" .. key).Activated:Fire()
-	end
-	check(view.digits == "123456" and #sent == 0, "keypad caps six digits without per-key remotes")
-	view.call.Activated:Fire()
-	check(#sent == 1 and sent[1][2].Ticket == "123456" and sent[1][2].FaxId == "visit", "CALL sends ticket and visit")
-	view:Update(state, false, true)
-	view.call.Activated:Fire()
-	view:Key("CLEAR")
-	check(#sent == 1 and view.digits == "123456", "pending request blocks repeated call and digit edits")
-	view:Update(state, false, false)
-	view:Error("PhoneNotReady")
-	view:Update(state, false, false)
-	check(view.message.Text:find("Repair"), "repeated snapshot preserves local error")
-	listener({ KeyCode = Roblox.Enum.KeyCode.Backspace }, false)
-	check(view.digits == "12345", "keyboard backspace edits code")
-	listener({ KeyCode = Roblox.Enum.KeyCode.Six }, false)
-	check(view.digits == "123456", "keyboard digits work")
-	listener({ KeyCode = Roblox.Enum.KeyCode.ButtonB }, false)
-	check(not view.panel.Visible and sent[#sent][1] == "CloseFax", "controller B closes fax with scoped request")
-	view:Update(state, false, false)
-	check(not view.panel.Visible, "unanswered close cannot reopen same visit")
-	state.Fax = table.clone(state.Fax)
-	state.Fax.Id = "next"
-	view:Update(state, false, false)
-	check(view.digits == "" and view.panel.Visible, "new visit resets digits")
-	view:Update(state, true, false)
-	check(not view.panel.Visible and sent[#sent][2].FaxId == "next", "menu interrupts and closes active visit")
-	view:Destroy()
-	check(disconnected and not view.panel.Parent, "fax UI and input cleaned up")
-	local requests = h:load("src/GShared/Prototype/Networking/Requests.luau")
-	local _, payload = requests.Payload({ RunId = "run" }, "DialTicket", { FaxId = "visit", Ticket = "123456" })
-	check(
-		payload.RunId == "run" and payload.Ticket == "123456" and payload.FaxId == "visit",
-		"network helper retains ticket scope"
-	)
-end
 print("PASS: " .. total .. " customer drop-off, fax pickup and input checks.")

@@ -5,15 +5,14 @@ local function check(value, label)
 	assert(value, label)
 	total += 1
 end
-local root = "src/LServer/Core/"
 local h = Harness.Environment()
-local Schema = h:load(root .. "ProfileSchema.luau")
-local Config = h:load(root .. "Config.luau")
-local Store = h:load(root .. "SessionStore.luau")
+local Schema = h:load("src/LServer/PlayerData/ProfileSchema.luau")
+local Config = h:load("src/LServer/Configuration/ServerConfig.luau")
+local Store = h:load("src/LServer/PlayerData/ProfileStore.luau")
 
 check(Schema.Validate(Schema.Default()), "default schema valid")
 local invalid = Schema.Default()
-invalid.Version = 3
+invalid.Version = Schema.Version + 1
 check(not Schema.Validate(invalid), "future schema rejected")
 invalid = Schema.Default()
 invalid.Stats.Deaths = 0 / 0
@@ -107,7 +106,7 @@ check(store:Abandon(6, "cancelled-owner"), "abandon succeeds")
 check(records[6].Data.Stats.CasesSolved == 99 and records[6].Lease == nil, "abandon preserves original data")
 check(store:Abandon(3, "wrong-owner") and records[3].Lease.Token == "retry", "abandon does not unlock someone else")
 
-local Party = h:load("src/LServer/Parties/PartyService.luau")
+local Party = h:load("src/LServer/Matchmaking/PartyService.luau")
 local host, friend, stranger = h:player(10), h:player(11), h:player(12)
 local ready, friendship = {}, true
 local friendshipHook
@@ -180,7 +179,7 @@ h.time += Config.PartyIdleSeconds + 1
 party:Tick()
 check(next(party.parties) == nil, "idle parties expire")
 
-local Rules = h:load(root .. "AdmissionRules.luau")
+local Rules = h:load("src/LServer/Travel/AdmissionRules.luau")
 local ticket = {
 	Version = 1,
 	Expires = h.time + 60,
@@ -223,7 +222,7 @@ ticket.JobId = "job"
 ticket.Members["10"].ClaimedJob = "job"
 check(Rules.CanClaim(ticket, context), "same destination claim is idempotent")
 
-local limiter = h:load(root .. "RateLimiter.luau").new(function()
+local limiter = h:load("src/LServer/Networking/RateLimiter.luau").new(function()
 	return h.time
 end)
 for _ = 1, 8 do
@@ -233,8 +232,12 @@ check(not limiter:Take(host), "request flood rejected")
 h.time += 0.5
 check(limiter:Take(host) and not limiter:Take(host), "request budget replenishes at bounded rate")
 
-for _, name in ipairs(fs.readDir(root)) do
-	check(fs.readFile(root .. name) == fs.readFile("src/GServer/Core/" .. name), "identical cross-place Core " .. name)
+local serde = require("@lune/serde")
+local deployment = serde.decode("json", fs.readFile("project.sources.json"))
+for _, entry in ipairs(deployment.CommonModules) do
+	for _, target in ipairs(entry.Targets) do
+		check(fs.readFile(entry.Source) == fs.readFile(target), "canonical common deployment " .. target)
+	end
 end
 -- Every static Roblox require must resolve after moving modules, including bootstraps.
 local function references(folder)
@@ -243,6 +246,7 @@ local function references(folder)
 		if fs.isDir(path) then
 			references(path)
 		elseif name:match("%.luau$") then
+			check(path:match("^src/[LG]%a+/%w+/[^/]+%.luau$") ~= nil, "exact Root/System/Script layout: " .. path)
 			local source = fs.readFile(path)
 			if source:find("local Shared =", 1, true) then
 				local rootName = path:match("^src/([LG])") .. "Shared"
@@ -257,7 +261,11 @@ local function references(folder)
 				if base == "script" or base == "root" or base == "Shared" then
 					local target = base == "script" and path:gsub("%.luau$", "")
 						or base == "Shared" and ("src/" .. path:match("^src/([LG])") .. "Shared")
-						or folder
+						or (
+							source:find("local root = script.Parent.Parent", 1, true)
+								and folder:match("^(.*)/[^/]+$")
+							or folder
+						)
 					for segment in rest:gmatch("[^%.]+") do
 						target = segment == "Parent" and target:match("^(.*)/[^/]+$") or target .. "/" .. segment
 					end
@@ -291,11 +299,5 @@ for _, environment in ipairs({ "L", "G" }) do
 	end
 	publicModules("src/" .. environment .. "Shared")
 end
-local public = h:load("src/GShared/Prototype/Repair/Definitions.luau")
-check(table.isfrozen(public) and table.isfrozen(public.Gear), "public definitions cannot become mutable run state")
-check(
-	public.NextStep.Repair == "Secure" and public.Gear.Secure == "Screwdriver",
-	"shared repair definitions preserve the required work sequence"
-)
-local compiled = Harness.Compile("src") + Harness.Compile("tests")
+local compiled = Harness.Compile("src") + Harness.Compile("common") + Harness.Compile("tests")
 print(string.format("PASS: %d regression checks; %d Luau files compiled.", total, compiled))

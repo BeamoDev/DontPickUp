@@ -2,12 +2,12 @@ local UI = require(script.Parent.Parent.Interface.AuthoredUI)
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("GShared", 30)
 -- Pooled task surfaces; drag previews are local and send one discrete move on release.
 local Extra = require(script.Parent.BenchTaskView)
+local Diagnosis = require(script.Parent.DiagnosisView)
 local View = {}
 View.__index = View
 local ACCENT, WHITE, BLACK = Color3.fromRGB(220, 213, 200), Color3.fromRGB(235, 235, 235), Color3.new(0, 0, 0)
 local Public = require(Shared:WaitForChild("Repair", 30):WaitForChild("RepairDefinitions", 30))
 local KINDS = Public.TaskKinds
-local NAMES = Public.PartNames
 local MARKS = { "A / +", "B / -", "C / +" }
 local COLORS = {
 	Color3.fromRGB(240, 140, 105),
@@ -82,6 +82,7 @@ function View.new(parent, send, deps)
 	)
 	self.ghost = UI.Bind("TextLabel", self.root, "DraggedItem", { Visible = false })
 	self.extra = Extra.new(self.root)
+	self.diagnosis = Diagnosis.new()
 	if self.d.input then
 		table.insert(
 			self.connections,
@@ -274,6 +275,7 @@ function View:Update(work, busy, visible)
 		self:CancelDrag()
 	end
 	if not visible then
+		self.diagnosis:Hide()
 		self.extra:Hide()
 		self.key = nil
 		return
@@ -290,6 +292,12 @@ function View:Render()
 	local watching = (p.Kind == "Memory" or p.Kind == "Speaker") and now < p.RevealUntil
 	local step = watching and math.floor((now - p.RevealAt) / 0.7) + 1 or 0
 	local lit = watching and (now - p.RevealAt) % 0.7 < 0.5 and p.Sequence[step] or 0
+	if p.Kind == "Probes" then
+		self.extra:Hide()
+		self.diagnosis:Render(self, p, reduced)
+		return
+	end
+	self.diagnosis:Hide()
 	if Extra.Supports(p) then
 		self.key = nil
 		self.extra:Render(self, p, watching, lit, reduced)
@@ -361,13 +369,6 @@ function View:Render()
 			if self.selected == i then
 				button.Text = "[ " .. button.Text .. " ]"
 			end
-		elseif p.Kind == "Probes" then
-			local index = (i - 1) % 3 + 1
-			button.Text = i <= 3 and ((p.Tested[i] and "" or "CHECK ") .. NAMES[i] .. "\n" .. p.Readings[i])
-				or ("REPLACE\n" .. NAMES[index])
-			if i > 3 then
-				button.Visible = p.Progress == 3
-			end
 		elseif p.Kind == "Circuit" then
 			button.Text = i == 1 and "START" or i == 4 and "END" or ""
 			button.TextYAlignment, button.TextXAlignment, button.TextSize =
@@ -409,6 +410,7 @@ function View:Render()
 	end
 end
 function View:Destroy()
+	self.diagnosis:Hide()
 	self.extra:Hide()
 	self:CancelDrag()
 	for _, connection in ipairs(self.connections) do

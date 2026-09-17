@@ -7,16 +7,13 @@ local function check(value, label)
 	total += 1
 end
 local preferred = { KeyboardAndMouse = "Mouse", Touch = "Touch", Gamepad = "Pad" }
-Roblox = setmetatable(
-	{
-		Enum = setmetatable({ PreferredInput = preferred }, {
-			__index = function(_, k)
-				return require("@lune/roblox").Enum[k]
-			end,
-		}),
-	},
-	{ __index = Roblox }
-)
+Roblox = setmetatable({
+	Enum = setmetatable({ PreferredInput = preferred }, {
+		__index = function(_, k)
+			return require("@lune/roblox").Enum[k]
+		end,
+	}),
+}, { __index = Roblox })
 for _, name in ipairs({ "Vector2", "UDim2", "UDim", "Color3", "Enum" }) do
 	h.env[name] = Roblox[name]
 end
@@ -134,5 +131,31 @@ cursor:Destroy()
 check(
 	render.callback == nil and player.CameraMode == Roblox.Enum.CameraMode.Classic and input.MouseIconEnabled,
 	"teardown restores native camera and cursor"
+)
+local overlay = h.instance("ScreenGui")
+overlay.Name, overlay.Parent = "Crosshair", gui.Parent
+overlay.Enabled, overlay.ResetOnSpawn = false, true
+local dot = h.instance("Frame")
+dot.Name, dot.Parent, dot.Visible = "Frame", overlay, false
+local toggle = h.instance("TextButton")
+toggle.Name, toggle.Parent, toggle.Activated = "MouseControl", gui, signal()
+local modern = h:load("src/GClient/Camera/CameraController.luau").new(gui, player, input, {
+	authored = true,
+	render = render,
+	needsPointer = function()
+		return false
+	end,
+	menuOpen = function()
+		return false
+	end,
+})
+check(
+	modern.overlay == overlay and modern.dot == dot and modern:IsLocked(),
+	"Crosshair.Frame replaces DPU_Cursor without generating UI"
+)
+modern:Destroy()
+check(
+	overlay.Parent == gui.Parent and not overlay.Enabled and overlay.ResetOnSpawn,
+	"new Crosshair cleanup preserves and restores authored screen"
 )
 print(string.format("PASS: %d first-person cursor checks (mocked Roblox).", total))

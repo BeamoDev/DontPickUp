@@ -70,85 +70,216 @@ function View.new(playerGui, actions)
 		table.insert(self.connections, value.Activated:Connect(callback))
 		return value
 	end
-	self.clockPanel = UI.Bind("Frame", self.gui, "Clock")
+	local hud = playerGui:FindFirstChild("HUD")
+	if hud and hud:FindFirstChild("Clock") then
+		self.hud = UI.Bind("ScreenGui", playerGui, "HUD")
+		self.hud.Enabled, self.hud.ResetOnSpawn = true, false
+	end
+	self.clockPanel = UI.Bind("Frame", self.hud or self.gui, "Clock")
 	self.night = label(self.clockPanel, "Night")
 	self.clock = label(self.clockPanel, "Time")
 	self.warning = frame(self.gui, "Warning")
 	UI.Bind("UISizeConstraint", self.warning, nil)
 	self.warningText = label(self.warning, "Text")
-	self.bottom = frame(self.gui, "Objective")
-	UI.Bind("UISizeConstraint", self.bottom, nil)
-	self.objective = label(self.bottom, "Text")
-	self.use = button(self.bottom, "Use", "INTERACT", function()
-		local action = self:CurrentAction()
-		if action and not self.busy then
-			self.actions.act(action)
+	local authoredObjective = hud and hud:FindFirstChild("Objective")
+	self.authoredObjective = authoredObjective ~= nil
+	if authoredObjective then
+		self.bottom = UI.Bind("Frame", hud, "Objective")
+		local scope = self.bottom:FindFirstChild("Frame") or self.bottom
+		local text = scope:FindFirstChild("Text", true) or scope:FindFirstChildWhichIsA("TextLabel", true)
+		assert(text and text:IsA("TextLabel"), "[DPU] HUD.Objective.Frame needs its objective TextLabel")
+		self.objective = UI.Bind("TextLabel", text.Parent, text.Name, { Text = "", Visible = true })
+		local ancestor = text.Parent
+		while ancestor and ancestor ~= self.bottom do
+			if ancestor:IsA("GuiObject") then
+				UI.Bind("GuiObject", ancestor.Parent, ancestor.Name, { Visible = true })
+			end
+			ancestor = ancestor.Parent
 		end
-	end)
-	self.signalMenu = frame(self.gui, "TeamSignals")
-	UI.Bind("UISizeConstraint", self.signalMenu, nil)
-	self.signalButtons = {}
-	local signals = { "Parts", "Phone", "Inside", "NoAnswer", "Ticket", "Why" }
-	for index, key in ipairs(signals) do
-		self.signalButtons[key] = button(self.signalMenu, key, key, function()
-			self.signalsOpen = false
-			self.actions.act("Signal", key)
-		end)
-	end
-	self.modal = frame(self.gui, "Briefing")
-	self.modalTitle = label(self.modal, "Title")
-	local scroll = UI.Bind("ScrollingFrame", self.modal, "Content")
-	self.modalText = label(scroll, "Text")
-	self.ack = button(self.modal, "Acknowledge", "READY", function()
-		if self.introVisible then
-			self.introSeen = self.state.RunId
-			self:Render()
-		elseif self.state.NeedsRules then
-			self.actions.act("ReadRules")
-		else
-			self.rulesOpen = false
-			self:Render()
-		end
-	end)
-	self.voteButtons = {}
-	for i, choice in ipairs({ "Report", "Hide", "Investigate" }) do
-		self.voteButtons[choice] = button(self.modal, choice, string.upper(choice), function()
-			if not self.busy then
-				if self.confirmAnswer then
-					local eventId = self.confirmAnswer
-					self.confirmAnswer = nil
-					if choice == "Hide" and self.state.Event and self.state.Event.Id == eventId then
-						self.actions.act("Answer")
+		local use = scope:FindFirstChild("Use", true)
+		if use and use:IsA("GuiButton") then
+			self.use = UI.Bind("GuiButton", use.Parent, use.Name)
+			self.useText = use:IsA("TextButton") and use or use:FindFirstChildWhichIsA("TextLabel", true)
+			if self.useText and self.useText ~= use then
+				self.useText = UI.Bind("TextLabel", self.useText.Parent, self.useText.Name)
+			end
+			table.insert(
+				self.connections,
+				use.Activated:Connect(function()
+					local action = self:CurrentAction()
+					if action and not self.busy then
+						self.actions.act(action)
 					end
-					self:Render()
-				else
-					self.actions.act("Vote", choice)
+				end)
+			)
+		end
+	else
+		self.bottom = frame(self.gui, "Objective")
+		UI.Bind("UISizeConstraint", self.bottom, nil)
+		self.objective = label(self.bottom, "Text")
+		self.use = button(self.bottom, "Use", "INTERACT", function()
+			local action = self:CurrentAction()
+			if action and not self.busy then
+				self.actions.act(action)
+			end
+		end)
+		self.useText = self.use
+	end
+	self.signalButtons = {}
+	if self.gui:FindFirstChild("TeamSignals") then
+		self.signalMenu = frame(self.gui, "TeamSignals")
+		UI.Bind("UISizeConstraint", self.signalMenu, nil)
+		local signals = { "Parts", "Phone", "Inside", "NoAnswer", "Ticket", "Why" }
+		for index, key in ipairs(signals) do
+			self.signalButtons[key] = button(self.signalMenu, key, key, function()
+				self.signalsOpen = false
+				self.actions.act("Signal", key)
+			end)
+		end
+	end
+	if self.gui:FindFirstChild("Briefing") then
+		self.modal = frame(self.gui, "Briefing")
+		self.modalTitle = label(self.modal, "Title")
+		local scroll = UI.Bind("ScrollingFrame", self.modal, "Content")
+		self.modalText = label(scroll, "Text")
+		self.ack = button(self.modal, "Acknowledge", "READY", function()
+			if self.introVisible then
+				self:AcknowledgeIntro()
+			elseif self.state.NeedsRules then
+				self.actions.act("ReadRules")
+			else
+				self.rulesOpen = false
+				self:Render()
+			end
+		end)
+		self.voteButtons = {}
+		for i, choice in ipairs({ "Report", "Hide", "Investigate" }) do
+			self.voteButtons[choice] = button(self.modal, choice, string.upper(choice), function()
+				if not self.busy then
+					if self.confirmAnswer then
+						local eventId = self.confirmAnswer
+						self.confirmAnswer = nil
+						if choice == "Hide" and self.state.Event and self.state.Event.Id == eventId then
+							self.actions.act("Answer")
+						end
+						self:Render()
+					else
+						self.actions.act("Vote", choice)
+					end
 				end
+			end)
+		end
+		self.replay = button(self.modal, "Replay", "READY FOR ANOTHER NIGHT", function()
+			if not self.busy then
+				self.actions.act("Replay")
+			end
+		end)
+		self.lobby = button(self.modal, "Lobby", "RETURN TO LOBBY", function()
+			if self.busy or not self.state.CanReturn then
+				return
+			end
+			if self.confirmReturn then
+				self.actions.lobby()
+			else
+				self.confirmReturn = true
+				self:Render()
 			end
 		end)
 	end
-	self.replay = button(self.modal, "Replay", "READY FOR ANOTHER NIGHT", function()
-		if not self.busy then
-			self.actions.act("Replay")
-		end
-	end)
-	self.lobby = button(self.modal, "Lobby", "RETURN TO LOBBY", function()
-		if self.busy or not self.state.CanReturn then
-			return
-		end
-		if self.confirmReturn then
-			self.actions.lobby()
-		else
-			self.confirmReturn = true
-			self:Render()
-		end
-	end)
 	self:Render()
 	return self
 end
 
+function View:RequestAnswer()
+	local event = self.state.Event
+	if not event then
+		return
+	end
+	if not self.modal and self.answerArmed == event.Id and workspace:GetServerTimeNow() < (self.answerUntil or 0) then
+		self.answerArmed = nil
+		self.actions.act("Answer")
+	else
+		self.confirmAnswer = event.Id
+		self:Render()
+	end
+end
+function View:RenderNotice(ending, vote, intro, rules, authoredLoss)
+	if not self.panels or not self.panels.briefing or authoredLoss or intro then
+		return
+	end
+	local state, message = self.state, nil
+	if self.confirmAnswer then
+		message = {
+			Title = "PICK UP?",
+			Text = "Answering this call will hurt you and change the Story ending. Understood closes this warning. To answer anyway, click the receiver again within ten seconds.",
+			Action = "ArmAnswer",
+		}
+	elseif ending then
+		message = {
+			Title = state.Ending and state.Ending.Title or state.Reason == "Dawn" and "SHIFT COMPLETE" or "SHIFT ENDED",
+			Text = string.format(
+				"Nights cleared: %d. Phones fixed: %d. Shop earnings: $%d.\n\n%s",
+				state.NightsCleared or 0,
+				state.Repaired or 0,
+				state.Revenue or 0,
+				state.Replay and "You are ready. Waiting for the other employees."
+					or state.CanReplay and "Press Understood to ready up and continue with your team."
+					or state.CanReturn and "Press Understood to return to the lobby."
+					or "Your results are being saved. Please wait."
+			),
+			Action = state.CanReplay and "Replay" or "ReturnLobby",
+			Disabled = state.Replay or not (state.CanReplay or state.CanReturn),
+		}
+	elseif
+		vote and self.voteSeen ~= state.RunId .. ":" .. state.Vote.OrderId .. ":" .. tostring(state.Vote.Purpose)
+	then
+		message = {
+			Title = "TEAM DECISION",
+			Text = state.Vote.Message
+				.. (
+					state.Vote.Purpose == "Software"
+						and "\n\nUse the vote parts: REPORT installs CIVIC WATCH; HIDE skips it; INVESTIGATE skips it and opens a record. Skipping raises suspicion."
+					or "\n\nUse the vote parts: REPORT sends evidence to the government; HIDE protects it; INVESTIGATE looks deeper. Hiding or investigating raises suspicion."
+				),
+			Action = "VoteNotice",
+		}
+	elseif rules and not self.panels.rules then
+		message = { Title = "TONIGHT'S RULES", Text = table.concat(state.RuleSections or {}, "\n\n"), Action = "Rules" }
+	end
+	self.notice = message
+	self.panels:Notice(message, self.busy)
+end
+function View:AcknowledgeNotice()
+	local message, state = self.notice, self.state
+	if not message or self.busy or message.Disabled then
+		return
+	end
+	if message.Action == "ArmAnswer" then
+		self.answerArmed, self.answerUntil = self.confirmAnswer, workspace:GetServerTimeNow() + 10
+		self.confirmAnswer = nil
+	elseif message.Action == "VoteNotice" then
+		self.voteSeen = state.RunId .. ":" .. state.Vote.OrderId .. ":" .. tostring(state.Vote.Purpose)
+	elseif message.Action == "Rules" then
+		if state.NeedsRules then
+			self.actions.act("ReadRules")
+		else
+			self.rulesOpen = false
+		end
+	else
+		self.actions.act(message.Action)
+	end
+	self:Render()
+end
+
+function View:AcknowledgeIntro()
+	if self.introVisible and not self.busy then
+		self.introSeen = self.state.RunId
+		self:Render() -- Local acknowledgement only; clock-in and rules remain server validated.
+	end
+end
+
 function View:IsModalOpen()
-	return self.modal.Visible or (self.panels ~= nil and self.panels:IsOpen())
+	return (self.modal ~= nil and self.modal.Visible) or (self.panels ~= nil and self.panels:IsOpen())
 end
 
 function View:ToggleRules()
@@ -157,6 +288,9 @@ function View:ToggleRules()
 	self:Render()
 end
 function View:ToggleSignals()
+	if not self.signalMenu then
+		return
+	end
 	self.signalsOpen = not self.signalsOpen
 	self.rulesOpen = false
 	self:Render()
@@ -255,17 +389,21 @@ function View:Render()
 		self.warning.Position = UDim2.new(0.5, 0, 0, 72)
 		self.warning.Size = UDim2.new(0.94, 0, 0, short and 36 or 56)
 		self.warningText.TextSize = short and 12 or 15
-		self.modal.Position = short and UDim2.new(0.04, 0, 0, 116) or UDim2.fromScale(0.08, 0.22)
-		self.modal.Size = short and UDim2.new(0.92, 0, 1, -126) or UDim2.fromScale(0.84, 0.58)
-		self.modalTitle.TextSize = compact and 18 or 23
-		self.objective.TextSize = compact and 15 or 17
+		if self.modal then
+			self.modal.Position = short and UDim2.new(0.04, 0, 0, 116) or UDim2.fromScale(0.08, 0.22)
+			self.modal.Size = short and UDim2.new(0.92, 0, 1, -126) or UDim2.fromScale(0.84, 0.58)
+			self.modalTitle.TextSize = compact and 18 or 23
+		end
+		if not self.authoredObjective then
+			self.objective.TextSize = compact and 15 or 17
+		end
 	end
 	local hour = state.ClockHour or 0
 	if state.NightStartedAt and state.NightDuration then
 		hour = math.clamp(((state.TimeFrozenAt or now) - state.NightStartedAt) / state.NightDuration, 0, 1) * 6
 	end
 	local minutes = math.floor(hour * 60)
-	self.night.Text = string.format("NIGHT %02d", state.Night or 1)
+	self.night.Text = tostring(state.Night or 1)
 	self.clock.Text = state.NeedsClockIn and "CLOCK IN"
 		or state.Phase == "Tutorial" and "PREPARATION"
 		or state.Phase == "Closing" and ("CLOSING " .. math.max(0, math.ceil((state.ClosingEndsAt or now) - now)) .. "s")
@@ -323,29 +461,33 @@ function View:Render()
 	end
 	self.objective.Text = objective
 	local action = self:CurrentAction()
-	self.use.Visible, self.use.Active = action ~= nil, not self.busy and action ~= nil
-	self.use.Text = self.busy and "PLEASE WAIT"
-		or action == "ClockIn" and "CLOCK IN"
-		or action == "OpenFax" and "USE FAX PHONE"
-		or action == "OpenClock" and "OPEN TIMECLOCK"
-		or action == "PickupTool" and "TAKE REPAIR KIT"
-		or action == "ToggleDoor" and "OPEN STAFF DOOR"
-		or action == "Secure" and "PUT PHONE BACK TOGETHER"
-		or action == "Sit" and "SIT AT REPAIR BENCH"
-		or action == "Stand" and "STAND UP"
-		or action == "DepositPart" and "PUT PART ON BENCH"
-		or action == "Collect" and ("TAKE " .. string.upper(state.Order.Fault or "PART"))
-		or action == "Repair" and ("FIT " .. string.upper(state.Order.Fault or "PART"))
-		or action == "Diagnose" and "FIND THE BROKEN PART"
-		or action == "Install" and "OPEN CUSTOMER PHONE"
-		or action == "Test" and "CHECK THE PHONE"
-		or action == "TakeOrder" and "TAKE CUSTOMER'S PHONE"
-		or action == "Return" and "GIVE PHONE BACK"
-		or action == "Restock" and "UNPACK MORE PARTS"
-		or action == "ReadRules" and "READ TONIGHT'S RULES"
-		or action == "Records" and "SHOW REPAIR PAPERS"
-		or action and string.upper(action:gsub("(%l)(%u)", "%1 %2"))
-		or "WAIT"
+	if self.use then
+		self.use.Visible, self.use.Active = action ~= nil, not self.busy and action ~= nil
+	end
+	if self.useText then
+		self.useText.Text = self.busy and "PLEASE WAIT"
+			or action == "ClockIn" and "CLOCK IN"
+			or action == "OpenFax" and "USE FAX PHONE"
+			or action == "OpenClock" and "OPEN TIMECLOCK"
+			or action == "PickupTool" and "TAKE REPAIR KIT"
+			or action == "ToggleDoor" and "OPEN STAFF DOOR"
+			or action == "Secure" and "PUT PHONE BACK TOGETHER"
+			or action == "Sit" and "SIT AT REPAIR BENCH"
+			or action == "Stand" and "STAND UP"
+			or action == "DepositPart" and "PUT PART ON BENCH"
+			or action == "Collect" and ("TAKE " .. string.upper(state.Order.Fault or "PART"))
+			or action == "Repair" and ("FIT " .. string.upper(state.Order.Fault or "PART"))
+			or action == "Diagnose" and "FIND THE BROKEN PART"
+			or action == "Install" and "OPEN CUSTOMER PHONE"
+			or action == "Test" and "CHECK THE PHONE"
+			or action == "TakeOrder" and "TAKE CUSTOMER'S PHONE"
+			or action == "Return" and "GIVE PHONE BACK"
+			or action == "Restock" and "UNPACK MORE PARTS"
+			or action == "ReadRules" and "READ TONIGHT'S RULES"
+			or action == "Records" and "SHOW REPAIR PAPERS"
+			or action and string.upper(action:gsub("(%l)(%u)", "%1 %2"))
+			or "WAIT"
+	end
 	local outsideWarning = state.Outside and state.Outside.ThreatEndsAt
 	local injury = state.Alive and state.Injury and now < state.Injury.ExpiresAt and state.Injury or nil
 	local warning = outsideWarning
@@ -445,21 +587,29 @@ function View:Render()
 	if not state.Event or state.Event.Kind ~= "Call" or state.Event.Id ~= self.confirmAnswer or not state.Alive then
 		self.confirmAnswer = nil
 	end
-	local authoredRules, authoredLoss = false, false
+	local authoredRules, authoredLoss, authoredIntro, authoredComplete = false, false, false, false
 	if self.panels then
-		authoredRules, authoredLoss = self.panels:Update(state, self.busy, rules == true)
+		authoredRules, authoredLoss, authoredIntro, authoredComplete =
+			self.panels:Update(state, self.busy, rules == true, intro == true)
 	end
-	self.modal.Visible = not authoredLoss
-		and (
-			self.confirmAnswer ~= nil
-			or intro
-			or ending
-			or vote ~= nil and vote ~= false
-			or (rules == true and not authoredRules)
-		)
+	if self.modal then
+		self.modal.Visible = not authoredLoss
+			and not authoredComplete
+			and (
+				self.confirmAnswer ~= nil
+				or (intro and not authoredIntro)
+				or ending
+				or vote ~= nil and vote ~= false
+				or (rules == true and not authoredRules)
+			)
+	else
+		self:RenderNotice(ending, vote, intro, rules, authoredLoss or authoredComplete)
+	end
 	self.clockPanel.Visible = not self:IsModalOpen() and not focused
 	self.bottom.Visible = not self:IsModalOpen() and not focused
-	self.signalMenu.Visible = self.signalsOpen == true and self.clockPanel.Visible and state.Alive == true
+	if self.signalMenu then
+		self.signalMenu.Visible = self.signalsOpen == true and self.clockPanel.Visible and state.Alive == true
+	end
 	for key, signalButton in pairs(self.signalButtons) do
 		signalButton.Text = state.Signals and state.Signals[key] or key
 		signalButton.Active = not self.busy
@@ -485,7 +635,12 @@ function View:Render()
 		self.bottom.Visible = action ~= nil
 		self.objective.Text = "Respond before the time runs out."
 	end
-	self.objective.Size = action and UDim2.new(0.67, -18, 1, -18) or UDim2.new(1, -24, 1, -18)
+	if not self.authoredObjective then
+		self.objective.Size = action and UDim2.new(0.67, -18, 1, -18) or UDim2.new(1, -24, 1, -18)
+	end
+	if not self.modal then
+		return
+	end
 	self.ack.Visible = intro or rules == true
 	self.ack.Active = not self.busy
 	self.ack.Text = intro and "START SHIFT" or state.NeedsRules and "READY" or "BACK TO WORK"
@@ -592,6 +747,9 @@ function View:Destroy()
 	for _, connection in ipairs(self.connections) do
 		connection:Disconnect()
 	end
+	UI.Release(self.bottom)
+	UI.Release(self.clockPanel)
+	UI.Release(self.hud)
 	UI.Release(self.gui)
 end
 

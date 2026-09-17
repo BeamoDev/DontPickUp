@@ -5,25 +5,24 @@ local Scene = require(SceneStorage:WaitForChild("World", 30):WaitForChild("Scene
 local Interaction = {}
 Interaction.__index = Interaction
 function Interaction.new(deps, gui)
-	local self = setmetatable({ d = deps, connections = {} }, Interaction)
-	local panel = UI.Bind("Frame", gui, "Timecard", { Visible = false })
-	self.panel = panel
-	for i, spec in ipairs({ { "CLOCK IN", "ClockIn" }, { "CLOSE [Q / B]", "CloseFocus" } }) do
-		local button = UI.Bind("TextButton", panel, spec[2], { Text = spec[1] })
-		table.insert(
-			self.connections,
-			button.Activated:Connect(function()
-				if not self.focus or self.busy then
-					return
-				end
-				local id = self.focus.Id
-				if spec[2] == "CloseFocus" then
-					self.dismissed = id
-					self:Release()
-				end
-				deps.send(spec[2], { FocusId = id })
-			end)
-		)
+	local self = setmetatable({ d = deps, connections = {}, panels = deps.panels }, Interaction)
+	if self.panels and self.panels.clock then
+		self.panel = self.panels.clock.object
+		if gui:FindFirstChild("Timecard") then
+			self.legacy = UI.Bind("Frame", gui, "Timecard", { Visible = false })
+		end
+	else
+		self.panels = nil
+		self.panel = UI.Bind("Frame", gui, "Timecard", { Visible = false })
+		for _, spec in ipairs({ { "CLOCK IN", "ClockIn" }, { "CLOSE [Q / B]", "CloseFocus" } }) do
+			local button = UI.Bind("TextButton", self.panel, spec[2], { Text = spec[1] })
+			table.insert(
+				self.connections,
+				button.Activated:Connect(function()
+					self:Submit(spec[2])
+				end)
+			)
+		end
 	end
 	table.insert(
 		self.connections,
@@ -38,6 +37,31 @@ function Interaction.new(deps, gui)
 		end)
 	)
 	return self
+end
+function Interaction:Submit(action)
+	if
+		not self.focus
+		or self.dismissed == self.focus.Id
+		or not self.panel.Visible
+		or self.busy
+		or (self.d.isBusy and self.d.isBusy())
+	then
+		return
+	end
+	if action == "CloseFocus" then
+		self:Dismiss()
+		return
+	end
+	if action == "ClockIn" then
+		self.d.send(action, { FocusId = self.focus.Id })
+	end
+end
+function Interaction:SetVisible(visible)
+	if self.panels then
+		self.panels:UpdateClock(self.state, self.busy, visible)
+	else
+		self.panel.Visible = visible
+	end
 end
 function Interaction:Release()
 	if self.tween then
@@ -54,7 +78,7 @@ function Interaction:Release()
 		saved.Camera.CFrame, saved.Camera.Focus, saved.Camera.FieldOfView = saved.CFrame, saved.Focus, saved.FOV
 		saved.Camera.CameraSubject, saved.Camera.CameraType = saved.Subject, saved.Type
 	end
-	self.panel.Visible = false
+	self:SetVisible(false)
 end
 function Interaction:Dismiss()
 	if self.focus then
@@ -64,7 +88,7 @@ function Interaction:Dismiss()
 	self:Release()
 end
 function Interaction:Update(state, busy)
-	self.focus, self.busy = state.Focus, busy
+	self.state, self.focus, self.busy = state, state.Focus, busy
 	local focus = self.focus
 	if not focus then
 		if self.saved or self.panel.Visible then
@@ -106,11 +130,11 @@ function Interaction:Update(state, busy)
 		self:Release()
 		self.key = focus.Id
 	end
-	self.panel.Visible = true
+	self:SetVisible(true)
 	if self.d.reduced() then
 		if self.saved then
 			self:Release()
-			self.panel.Visible = true
+			self:SetVisible(true)
 		end
 		return
 	end
@@ -156,6 +180,11 @@ function Interaction:Destroy()
 	for _, connection in ipairs(self.connections) do
 		connection:Disconnect()
 	end
-	UI.Release(self.panel)
+	if self.legacy then
+		UI.Release(self.legacy)
+	end
+	if not self.panels then
+		UI.Release(self.panel)
+	end
 end
 return Interaction

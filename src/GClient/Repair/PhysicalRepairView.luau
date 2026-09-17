@@ -4,6 +4,7 @@ local Scene = require(SceneStorage:WaitForChild("World", 30):WaitForChild("Scene
 -- Local 3D task pieces. Only completed gestures send revision-scoped puzzle moves.
 local Tasks = require(script.Parent.PhysicalRepairTasks)
 local DeviceView = require(script.Parent.DeviceTaskView)
+local ScrewIndicator = require(script.Parent.ScrewIndicator)
 local View = {}
 View.__index = View
 local function make(class, parent, props)
@@ -45,7 +46,7 @@ function View.new(gui, send, deps)
 				drag
 				and (input == drag.Input or (drag.Mouse and input.UserInputType == Enum.UserInputType.MouseMovement))
 			then
-				drag.Screen = input.Position
+				drag.Screen = self:Pointer(input)
 			end
 		end)
 	)
@@ -57,7 +58,7 @@ function View.new(gui, send, deps)
 				drag
 				and (input == drag.Input or (drag.Mouse and input.UserInputType == Enum.UserInputType.MouseButton1))
 			then
-				self:Finish(input.Position)
+				self:Finish(self:Pointer(input))
 			end
 		end)
 	)
@@ -70,6 +71,15 @@ function View.new(gui, send, deps)
 		)
 	end
 	return self
+end
+-- Mouse event positions can use GUI-inset coordinates and button events do not
+-- track movement continuously. Match world interaction rays with live viewport
+-- coordinates throughout the gesture; touch retains its own tracked pointer.
+function View:Pointer(input)
+	if input.UserInputType == Enum.UserInputType.Touch then
+		return input.Position
+	end
+	return self.d.input:GetMouseLocation()
 end
 function View:_canInput()
 	local s, work = self.state, self.work
@@ -92,7 +102,7 @@ function View:_canInput()
 		and not (self.d.isBusy and self.d.isBusy())
 end
 -- Intersect the pointer ray with the phone plane; no physics or network drag simulation.
-function View:Point(position)
+function View:Point(position, height)
 	local camera = self.d.workspace.CurrentCamera
 	if not camera or not self.frameOfPhone then
 		return nil
@@ -103,13 +113,14 @@ function View:Point(position)
 	if math.abs(direction.Y) < 0.0001 then
 		return nil
 	end
-	local distance = (0.15 - origin.Y) / direction.Y
+	height = height or 0.15
+	local distance = (height - origin.Y) / direction.Y
 	if distance < 0 then
 		return nil
 	end
 	local hit = origin + direction * distance
 	local extent = self.phone and self.phone:GetAttribute("DPU_DeviceId") and 8 or 3.2
-	return Vector3.new(math.clamp(hit.X, -extent, extent), 0.15, math.clamp(hit.Z, -extent, extent))
+	return Vector3.new(math.clamp(hit.X, -extent, extent), height, math.clamp(hit.Z, -extent, extent))
 end
 function View:Hit(point, role)
 	if not point then
@@ -120,7 +131,11 @@ function View:Hit(point, role)
 		local spec = node.Spec
 		if not spec.Hidden and not spec.Disabled and not spec.Done and (not role or spec.Role == role) then
 			local delta = point - spec.Position
-			if math.abs(delta.X) <= spec.Size.X / 2 + 0.12 and math.abs(delta.Z) <= spec.Size.Z / 2 + 0.12 then
+			local inside = spec.HitRadius and (delta.X * delta.X + delta.Z * delta.Z <= spec.HitRadius * spec.HitRadius)
+				or not spec.HitRadius
+					and math.abs(delta.X) <= spec.Size.X / 2 + 0.12
+					and math.abs(delta.Z) <= spec.Size.Z / 2 + 0.12
+			if inside then
 				local magnitude = delta.Magnitude
 				if not distance or magnitude < distance then
 					nearest, distance = node, magnitude
@@ -129,6 +144,15 @@ function View:Hit(point, role)
 		end
 	end
 	return nearest
+end
+function View:Pick(position)
+	-- Mesh screws sit above the table: project onto each mesh's height, not a displaced table plane.
+	for _, node in pairs(self.nodes) do
+		local point = self:Point(position, node.Spec.Position.Y)
+		if self:Hit(point) == node then
+			return node, point
+		end
+	end
 end
 function View:_pose(node, point)
 	return self.frameOfPhone
@@ -194,8 +218,8 @@ function View:Begin(input)
 	if not self:_canInput() then
 		return
 	end
-	local point = self:Point(input.Position)
-	local node = self:Hit(point)
+	local position = self:Pointer(input)
+	local node, point = self:Pick(position)
 	if not node then
 		self.selected = nil
 		return
@@ -214,7 +238,7 @@ function View:Begin(input)
 		Input = input,
 		Mouse = input.UserInputType == Enum.UserInputType.MouseButton1,
 		Node = node,
-		Screen = input.Position,
+		Screen = position,
 		Start = point,
 		Last = point,
 		Travel = 0,
@@ -230,7 +254,10 @@ function View:Move()
 		self:CancelDrag()
 		return
 	end
-	local point = self:Point(drag.Screen)
+	if drag.Mouse then
+		drag.Screen = self:Pointer(drag.Input)
+	end
+	local point = self:Point(drag.Screen, drag.Start.Y)
 	if not point then
 		return
 	end
@@ -258,7 +285,7 @@ function View:Finish(position)
 		return
 	end
 	local spec, move = drag.Node.Spec, nil
-	local point = self:Point(position)
+	local point = self:Point(position, drag.Start.Y)
 	if spec.Role == "Drag" then
 		local target = self:Hit(point, "Drop")
 		if target then
@@ -266,7 +293,7 @@ function View:Finish(position)
 		elseif drag.Travel < 0.12 then
 			self.selected = drag.Node
 		end
-	elseif spec.Role == "Click" and self:Hit(point) == drag.Node then
+	elseif spec.Role == "Click" and self:Pick(position) == drag.Node then
 		move = spec.Index
 	elseif spec.Role == "Turn" and point and math.abs(point.X - drag.Start.X) >= 0.25 then
 		move = spec.Index
@@ -352,6 +379,9 @@ function View:_sync(puzzle)
 				TextColor3 = Color3.fromRGB(22, 21, 19),
 			})
 			node = { Part = part, Label = label }
+			if spec.HitRadius then
+				node.Indicator = ScrewIndicator.new(part)
+			end
 			self.nodes[spec.Id] = node
 			if spec.Wire then
 				local templates = self.d.storage and self.d.storage:FindFirstChild("Assets")
@@ -488,6 +518,20 @@ function View:Update(state, busy, blocked)
 				return
 			end
 			self:Move()
+			for _, node in pairs(self.nodes) do
+				if node.Indicator then
+					local drag = self.drag and self.drag.Node == node and self.drag
+					local progress = drag and math.clamp(math.abs(drag.Last.X - drag.Start.X) / 0.25, 0, 1) or 0
+					ScrewIndicator.Update(
+						node.Indicator,
+						node.Spec,
+						drag ~= nil and drag ~= false,
+						progress,
+						self.d.workspace:GetServerTimeNow(),
+						self.d.reduced()
+					)
+				end
+			end
 		end)
 	end
 	local revision = identity .. ":" .. work.Puzzle.Revision

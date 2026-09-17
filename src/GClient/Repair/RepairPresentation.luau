@@ -24,8 +24,12 @@ end
 
 function Presentation.new(deps, gui)
 	local self = setmetatable({ d = deps, connections = {}, state = {} }, Presentation)
-	self.highlight =
-		UI.Bind("Highlight", deps.workspace:FindFirstChild("Prototype"), "DPU_RepairFocus", { Enabled = false })
+	self.highlight = UI.Highlight(deps.workspace:FindFirstChild("Prototype"), "DPU_RepairFocus", {
+		DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+		FillTransparency = 1,
+		FillColor = ACCENT,
+		OutlineColor = ACCENT,
+	})
 	self.card = UI.Bind("Frame", gui, "RepairProgress", { Visible = false })
 	UI.Bind("UISizeConstraint", self.card, nil)
 	self.label = UI.Bind("TextLabel", self.card, "Step", { Text = "" })

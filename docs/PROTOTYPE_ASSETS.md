@@ -9,8 +9,8 @@ Workspace
   Prototype
     DPU_Prototype                 saved shop, stations, phones, seats and markers
       Fax                         authored Model with physical keypad/screen/Phone handset
-    DPU_InteractFocus             Highlight
-    DPU_RepairFocus               Highlight
+    DPU_InteractFocus             Highlight (optional)
+    DPU_RepairFocus               Highlight (optional)
 ReplicatedStorage
   Assets
     NPC                          Folder of authored customer Models (names may repeat)
@@ -20,17 +20,26 @@ ReplicatedStorage
     Request                      RemoteFunction
     StateChanged                 RemoteEvent
 StarterGui
-  DPU_Cursor                     ScreenGui, containing Dot
-  DPU_PrototypeHUD                ScreenGui, retain saved puzzle/briefing/objective controls
+  Crosshair                      ScreenGui, containing Frame (cursor dot)
+  HUD                            ScreenGui
     Clock                        Frame, authored top-left position
       Night                      TextLabel
       Time                       TextLabel
-    DialogueSubtitles            authored subtitle card
+    Frames                       Briefing, ClockIn, TonightsRules, ShiftComplete, GameLost, Settings
+    Scare                        Frame
+      Impact                     Sound
+      ShopAnomaly                Sound
+      Caption                    TextLabel
+      Visitor                    ViewportFrame
+        Camera                   authored Camera (position/angle preserved)
+        ScaryNPC                 authored monster Model, with RootPart and rig joints/bones
+    Dialogue                     authored subtitle card
       Frame
         CharacterViewPort
           ViewportFrame          reuse existing Camera if present
         Title
         Paragraph
+  DPU_PrototypeHUD                remaining saved repair controls
 ```
 
 `SceneReferences` is the shared path contract. `PrototypeWorld` binds the saved world and existing prompt callbacks. `AuthoredUI` binds saved controls and releases them without destroying them; the old unnamed sibling controls are claimed once in their saved sibling order. Keep those sibling groups intact. Styles and fixed layout remain authored; state-driven text, visibility, progress and puzzle-piece positions still update during play.
@@ -49,7 +58,7 @@ Stale customer/threat models with the prototype's runtime names are detached whi
 
 ## Clock and physical telephone
 
-There is no `ShiftHeader` requirement. `Clock.Night` and `Clock.Time` receive state text without changing their authored layout/text sizing. Tap Night (or press Tab / controller Select) to reopen shift information; tap Time (or press T) for team signals. Existing Briefing, Objective and puzzle controls remain in use.
+There is no `ShiftHeader` requirement. `Clock.Night` and `Clock.Time` receive state text without changing their authored layout/text sizing. Tap Night (or press Tab / controller Select) to reopen shift information. Time/T opens team signals only when the optional legacy TeamSignals still exists. HUD.Clock is preferred; legacy DPU_PrototypeHUD.Clock remains a fallback. HUD.Objective.Frame is preferred for objective text (Use is optional); legacy Objective remains supported. Puzzle controls still use DPU_PrototypeHUD.
 
 Pickup uses `Workspace.Prototype.DPU_Prototype.Fax`, not the old `FaxPhone` screen panel. The model needs `Key0` through `Key9`, `KeyClear`, `KeyClose`, `Dial`, `End` and `InputArea.SurfaceGui.Frame.TextLabel`. `Key*` and `Key#` retain their existing physical mapping but pickup requires six numeric digits. `Phone` is the receiver mesh/model. Keep intended surfaces queryable; real walls must remain collidable/queryable.
 
@@ -59,15 +68,19 @@ Remove the obsolete deployed `GClient.Prototype.FaxView` ModuleScript on sync; i
 
 ## Subtitles and cleanup
 
-Prototype server dialogue prefers `DPU_PrototypeHUD.DialogueSubtitles`, with Title, Paragraph and CharacterViewPort.ViewportFrame inside its Frame. It also supports the older `HUD.Subtitles` location when the prototype card is incomplete or absent. Only the unused card is suppressed; the selected card is never treated as legacy. A separate HUD ScreenGui is no longer required for prototype startup. You uses the local avatar and faint green title; customer lines use that order's selected `Assets.NPC` model and faint orange. Authored text sizing, card size and any existing viewport Camera CFrame/FOV are preserved. If the ViewportFrame has no Camera, the portrait system creates its own camera using the owner-configured DialogueConfig pose/FOV and removes it on teardown. Speaker changes use the existing fade/slide transition. Expired or blocked lines stop their render callback. The fixed ScreenGuis stay through respawns while bound.
+Server dialogue prefers `HUD.Dialogue`, with Title, Paragraph and CharacterViewPort.ViewportFrame optionally inside Frame. Older `DPU_PrototypeHUD.DialogueSubtitles` and `HUD.Subtitles` cards remain fallback locations. Both unused cards are suppressed when the migrated card is present, and are safe to delete after moving the card into HUD. You uses the local avatar and faint green title; customer lines use that order's selected `Assets.NPC` model and faint orange. Authored text sizing, card size and any existing viewport Camera CFrame/FOV are preserved. If the ViewportFrame has no Camera, the portrait system creates its own camera using the owner-configured DialogueConfig pose/FOV and removes it on teardown. Speaker changes use the existing fade/slide transition. Expired or blocked lines stop their render callback. The fixed ScreenGuis stay through respawns while bound.
 
-`Scare.Visitor` also supports a missing Camera: ScarePresentation reuses its CurrentCamera or a Camera child regardless of name, otherwise creates one owned runtime camera. Its existing caption, face geometry and sounds remain authored. Teardown restores borrowed camera pose/FOV and the original viewport reference, and destroys only an owned camera. A copied reference to Workspace.CurrentCamera is never used for scare animation.
+`HUD.Scare.Visitor.ScaryNPC` is the authored monster source. ScareActor creates one pooled animated copy in a WorldModel, keeping the authored rig transform, textures and camera pose. Only the root is anchored; internal joints/bones can animate. The source is restored on teardown. An AnimationController/Animator is supplied inside the runtime rig if needed, including when the saved controller sits outside ScaryNPC. All six supplied Monster 2 clips are stored in GClient/Effects/MonsterAnimations; one is chosen per fresh scare, with no immediate repeat. Tracks are cached and stopped between scares.
+
+The viewport camera's FOV eases to 70% of its authored FOV over 2.5 seconds; the viewport fades during the last 0.4 seconds. Clear restores its starting FOV. No camera-position lunge is applied to the new rig and Workspace.CurrentCamera is never touched. Reduced motion uses the existing silent caption and cancels active animation/zoom. Existing server damage, scare IDs, stale-snapshot rejection and menu interruption rules remain unchanged.
+
+Visitor supports a missing Camera by creating a temporary local one, but keep the saved Camera for the intended framing. Legacy DPU_PrototypeHUD.Scare with its Part head remains supported. On teardown, borrowed cameras and the original viewport reference are restored, and only runtime-owned cameras/worlds/tracks are destroyed. Animation ownership/experience permissions and rig compatibility require Studio verification.
 
 Shutdown disconnects callbacks and restores captured GUI/scene state, lighting time, player spawn settings and camera ownership. It preserves the saved shop, seats, template, remotes, HUD and highlights.
 
 ## Studio verification
 
-Run `tests/Run.ps1` for all 25 suites, compilation/layout/import checks and Core parity. Fixed map/UI constructor tests reject replacement UI/geometry creation; ScarePresentation may create one runtime Camera when the saved viewport has none. The fixture files in `tests/fixtures/prototype` were captured from the former builders and are test-only data, never a runtime fallback. Local tests cannot inspect the descendants hidden in the supplied screenshots.
+Run `tests/Run.ps1` for all 30 suites, compilation/layout/import checks and Core parity. Fixed map/UI constructor tests reject replacement UI/geometry creation; ScarePresentation may create one runtime Camera when the saved viewport has none, plus an owned WorldModel and animation host for the supplied monster. The fixture files in `tests/fixtures/prototype` were captured from the former builders and are test-only data, never a runtime fallback. Local tests cannot inspect the descendants hidden in the supplied screenshots.
 
 After syncing, check Output for any missing authored path. Verify one shop/HUD/cursor, the top-left Night/Time labels, random customer rigs with matching subtitle portraits and pickup appearances, both seats and cameras, physical telephone digits/Dial/End/KeyClose, wall/range rejection, timeclock, repair controls, dawn closing/results/replay, respawn and teardown. Test with two players and touch/controller input. Keep the full saved HUD contents; do not remove individual fixed puzzle panels simply because they start hidden. No live Studio or published-place validation is implied by the local fixtures.
 
@@ -81,7 +94,7 @@ The current stock pickups are direct children of `Workspace.Prototype.DPU_Protot
 | `Part_KeypadBox2` | `Box2` |
 | `Part_SpeakerBox3` | `Box3` |
 
-Storage is a Model. Anchor/query-enable the boxes and query-enable the pickups. Click/tap a box or its matching Label to open it, then take the visible stock part when the drawer finishes moving. Labels and pickup surfaces travel 0.8 studs along negative world Z in 0.35 seconds, preserving their authored offsets and rotations. Close returns all three to their original locations. Existing loose welded pickups follow their box without an extra competing tween; no new welds are created. Covers remain unchanged.
+Storage is a Model. Anchor/query-enable the boxes and query-enable the pickups. Click/tap a box or its matching Label to open it, then take the visible stock part when the drawer finishes moving. Labels and pickup surfaces travel 0.8 studs along the Storage Model pivot's local negative Z in 0.35 seconds, preserving their authored offsets and rotations. Close returns all three to their original locations. Existing loose welded pickups follow their box without an extra competing tween; no new welds are created. Covers remain unchanged.
 
 PrototypeStorage reuses ContainerService through the existing prototype input and request path. The server checks the loaded/admitted employee, living/standing state, rules, shift, range, obstruction, drawer identity and revision. Collect still uses the existing order/stock/carried-part validation, and now also checks that the stock drawer is open, stationary and reachable. Objective highlights resolve the moved pickup, highlighting its drawer while closed. There is no second interaction/camera stack.
 
@@ -119,3 +132,27 @@ The active simple repair starts with four screws, cover removal and battery remo
 A battery replacement is fitted directly because the old battery is already out. Other faults require removing and fitting the failed component, then reinstalling the original battery. Cover and four screws follow. Software/private-record choices, final test, pickup calls and rewards keep their existing validation. Physical gestures use the actual component meshes and authored sockets; controller/button fallback sends the same revision-scoped inputs. Committed part motion is server replicated. Cancelling a task resets its uncompleted stage sequence; finished job stages remain in the order.
 
 Studio checks: verify mesh back-face orientation at both placement anchors, camera coverage of loose parts, screw/cover/battery drag targets, SpeakerMount/KeypadMount defaults, customer grip pose, and another player's view of accepted movements. Test all three faults, leaving/re-entering a bench, interruption, customer return and source-model preservation. Local mocks do not verify imported mesh hitboxes, animation/physics or camera rendering.
+
+
+## Optional highlight helpers
+
+`Workspace.Prototype.DPU_InteractFocus` and `DPU_RepairFocus` no longer block client startup. Each presentation controller reuses a saved Highlight when present, preserving its authored style and restoring it on teardown. Otherwise it creates one temporary local Highlight with the existing defaults and deletes only that owned effect on teardown. There is no 30-second wait for these effects, no new input/render loop, and no generated map or HUD. Keep the real bench `RepairFocus` / `RepairCamera` Attachments; these are different from the optional Highlight named `DPU_RepairFocus`.
+
+
+## Repair controls and diagnostics
+
+The authored phone keeps physical screw, cover and battery gestures. Screw selection uses small circular targets (0.055-0.12 stud radius) without the old padded rectangle, projected at the mesh's actual height. Four local BillboardGui rings show each screw with a rotating marker; turning advances the marker and completed screws hide it. The existing repair render connection updates the rings, and reduced motion stops rotation. These decorations do not intercept input and disappear with their owned local meshes.
+
+After removing the cover and battery, the Probes stage automatically switches to the authored BenchPuzzle.TaskSurface panel. Three diagnostic cards show Battery, Speaker and Keypad, with animated meters and PASS/FAULT text. Test all three, then choose the faulty component. No floating probe/replace blocks are created for this device stage. The server still owns test results, the hidden answer, work ownership and puzzle revisions. The existing Storage collection, actual component replacement and reassembly remain intact.
+
+No new authored UI or map parts are required. Studio should verify tiny screw targeting on mouse/touch, ring visibility, diagnostic meter sizing, gamepad navigation, and the transition back to physical replacement/reassembly.
+
+## UI migration cleanup
+
+With HUD.Clock, HUD.Scare, the complete HUD.Frames cards and Crosshair.Frame present, the old DPU Clock, Scare, Timecard, Briefing, TeamSignals and DPU_Cursor are no longer required. Do not delete the remaining DPU_PrototypeHUD: BenchPuzzle, Inspection, RepairProgress, Warning, MouseControl, RepairControlMode, ObjectAction and PhysicalRepairHint are still bound.
+
+If legacy Briefing is absent, the new one-button card also explains votes and displays successful results. Understood closes the vote notice so players can use the authored VoteREPORT/VoteHIDE/VoteINVESTIGATE parts; results use HUD.Frames.ShiftComplete when present, falling back to Understood to ready up or return to Lobby when replay is unavailable. For harmful ringing calls, Understood dismisses the warning; a second receiver click within ten seconds explicitly confirms answering. These routes retain existing server validation and never add buttons to the new card.
+
+With HUD.Objective.Frame and its text label present, the old DPU_PrototypeHUD.Objective is also optional. Keep the remaining repair, subtitle, warning and input helper objects until they have been migrated.
+
+Dialogue migration: sync GClient after moving the subtitle card to `HUD.Dialogue`. Keep its Title, Paragraph and CharacterViewPort.ViewportFrame descendants. The old DPU DialogueSubtitles is no longer required; retain the other still-used DPU screens.

@@ -159,7 +159,9 @@ function Assets.Install(h)
 				elseif name == "WorldInteraction" then
 					ws = args[2].workspace
 				end
-				Assets.Build(self, name, gui, ws, storage)
+				if not self.skipPrototypeAssets then
+					Assets.Build(self, name, gui, ws, storage)
+				end
 				if name == "PuzzleView" and args[3] and args[3].workspace then
 					Assets.Build(self, "PhysicalRepairView", gui, args[3].workspace)
 				end
@@ -168,6 +170,12 @@ function Assets.Install(h)
 				self.env.Instance.new = function(class)
 					if name == "ScarePresentation" and class == "Camera" and not runtimeCamera then
 						runtimeCamera = true
+						return construct(class)
+					end
+					if
+						name == "ScarePresentation"
+						and (class == "WorldModel" or class == "AnimationController" or class == "Animator")
+					then
 						return construct(class)
 					end
 					error("Fixed authored binding attempted to construct " .. class .. " in " .. name)

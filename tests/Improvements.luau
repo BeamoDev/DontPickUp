@@ -530,8 +530,29 @@ do
 	direct:Update({ Alive = true, Phase = "Night" }, false)
 	check(not direct.highlight.Enabled, "unavailable authored model releases shared highlight")
 	direct:Destroy()
+	-- The missing saved interaction helper must also be optional.
+	local savedHover, parent = direct.highlight, direct.highlight.Parent
+	savedHover.Parent = nil
+	local directLoad = Harness.Environment().load
+	local recovered = directLoad(h, "src/GClient/Interaction/WorldInteractionController.luau").new(gui, direct.d)
+	phoneModel:SetAttribute("DPU_Enabled", true)
+	recovered:Update({ Alive = true, Phase = "Night" }, false)
+	check(
+		recovered.highlight.Enabled and recovered.highlight.Adornee == phoneModel,
+		"missing saved interaction highlight does not stop world input"
+	)
+	local countBefore = #sent
+	input.InputBegan:Fire(click, false)
+	input.InputEnded:Fire(click, false)
+	check(#sent == countBefore + 1, "recovered controller sends one interaction with no old input listener")
+	recovered:Destroy()
+	check(
+		recovered.highlight.Parent == nil and recovered.hint.Parent == gui,
+		"world teardown removes temporary effect and preserves authored hint"
+	)
+	savedHover.Parent = parent
 	input.InputEnded:Fire({ KeyCode = Roblox.Enum.KeyCode.ButtonR2 }, false)
-	check(#sent == 3 and direct.hint.Parent ~= nil, "world input disconnects on teardown")
+	check(#sent == countBefore + 1 and direct.hint.Parent ~= nil, "world input disconnects on teardown")
 	local selection = { SelectedObject = nil }
 	local reader = h:load("src/GClient/Interface/InspectionView.luau").new(gui, {
 		input = input,

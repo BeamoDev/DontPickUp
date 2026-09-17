@@ -20,7 +20,7 @@ local colors = {
 }
 local paper = Color3.fromRGB(216, 208, 189)
 function Tasks.Supports(p)
-	return p and supported[p.Kind] == true
+	return p and supported[p.Kind] == true and not (p.DeviceStage == "Probes")
 end
 function Tasks.Build(p)
 	local nodes = {}

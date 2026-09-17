@@ -60,6 +60,11 @@ local a = store:Acquire(1, "lobby", function()
 	return false
 end)
 check(a ~= nil and records[1].Lease.Token == "lobby", "acquire fresh owner")
+local employeeNumber = a.Data.EmployeeNumber
+check(
+	employeeNumber >= 1000 and employeeNumber <= 9999 and records[1].Data.EmployeeNumber == employeeNumber,
+	"employee number is committed on first acquisition, before first save"
+)
 a.Data.Stats.CasesSolved = 12
 check(store:Write(1, a, a.Data, false, "save-1", h.time + 20), "save current owner")
 check(records[1].Data.Stats.CasesSolved == 12, "save data persisted")
@@ -69,6 +74,7 @@ local b = store:Acquire(1, "game", function()
 end)
 check(b ~= nil and h.time - before >= Config.LeaseSeconds, "new owner waits full lease")
 check(b.Data.Stats.CasesSolved == 12, "takeover preserves data")
+check(b.Data.EmployeeNumber == employeeNumber, "Lobby to Game acquisition retains the employee number")
 local ok, reason = store:Write(1, a, a.Data, true, "stale-release", h.time + 20)
 check(not ok and reason == "OwnershipLost" and records[1].Lease.Token == "game", "stale owner cannot save or release")
 responseLost = true
@@ -105,6 +111,61 @@ records[6].Data.Stats.CasesSolved = 99
 check(store:Abandon(6, "cancelled-owner"), "abandon succeeds")
 check(records[6].Data.Stats.CasesSolved == 99 and records[6].Lease == nil, "abandon preserves original data")
 check(store:Abandon(3, "wrong-owner") and records[3].Lease.Token == "retry", "abandon does not unlock someone else")
+
+-- Migration commits atomically with lease acquisition, retaining existing progression.
+for _, version in ipairs({ 1, 2, 3 }) do
+	local old = Schema.Default()
+	old.Version, old.EmployeeNumber = version, nil
+	old.Stats.Credits, old.Progress.HighestShift = version == 1 and nil or 64, 5
+	old.Progress.Evidence.saved_clue = true
+	old.RecentOutcomes = { "paid_once" }
+	if version < 3 then
+		old.Settings.MusicEnabled, old.Settings.SFXEnabled, old.Settings.CameraShake = nil, nil, nil
+	end
+	records[20 + version] = { Format = 1, Data = old }
+	local migrated = store:Acquire(20 + version, "migration", function()
+		return false
+	end)
+	check(
+		migrated and migrated.Data.Version == Schema.Version and Schema.Validate(migrated.Data),
+		"all historical schemas acquire as current validated profiles"
+	)
+	check(
+		migrated.Data.EmployeeNumber >= 1000
+			and records[20 + version].Data.EmployeeNumber == migrated.Data.EmployeeNumber,
+		"existing player receives a durably assigned employee number"
+	)
+	check(
+		migrated.Data.Progress.HighestShift == 5
+			and migrated.Data.Progress.Evidence.saved_clue
+			and migrated.Data.RecentOutcomes[1] == "paid_once"
+			and migrated.Data.Stats.Credits == (version == 1 and 0 or 64),
+		"identity migration preserves progress, evidence, receipts and credits"
+	)
+end
+for _, value in ipairs({ -1, 999, 10000, 1234.5, "1234", 0 / 0 }) do
+	local malformed = Schema.Default()
+	malformed.EmployeeNumber = value
+	check(not Schema.Validate(malformed), "malformed employee identity fails closed")
+end
+local stableAfterLostReply
+local actualUpdate = store.d.update
+store.d.update = function(userId, transform)
+	local result = transform(Schema.Copy(records[userId]))
+	if result then
+		records[userId] = Schema.Copy(result)
+	end
+	if not stableAfterLostReply then
+		stableAfterLostReply = result.Data.EmployeeNumber
+		error("employee assignment committed, reply lost")
+	end
+	return result
+end
+local recovered = store:Acquire(30, "lost-reply", function()
+	return false
+end)
+check(recovered.Data.EmployeeNumber == stableAfterLostReply, "lost acquire reply cannot reroll committed identity")
+store.d.update = actualUpdate
 
 local Party = h:load("src/LServer/Matchmaking/PartyService.luau")
 local host, friend, stranger = h:player(10), h:player(11), h:player(12)

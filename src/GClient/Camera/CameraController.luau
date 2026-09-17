@@ -17,12 +17,16 @@ function FirstPersonCamera.new(parent, player, input, deps)
 		previousMouseBehavior = input.MouseBehavior,
 	}, FirstPersonCamera)
 	self.authored = deps.authored == true
-		or (parent.Parent:FindFirstChild("DPU_Cursor") ~= nil and parent:FindFirstChild("MouseControl") ~= nil)
+		or (
+			(parent.Parent:FindFirstChild("Crosshair") ~= nil or parent.Parent:FindFirstChild("DPU_Cursor") ~= nil)
+			and parent:FindFirstChild("MouseControl") ~= nil
+		)
 	if self.authored then
-		local overlay = UI.Bind("ScreenGui", parent.Parent, "DPU_Cursor")
+		local modern = parent.Parent:FindFirstChild("Crosshair")
+		local overlay = UI.Bind("ScreenGui", parent.Parent, modern and "Crosshair" or "DPU_Cursor")
 		overlay.ResetOnSpawn, overlay.Enabled = false, true
 		self.overlay = overlay
-		self.dot = UI.Bind("Frame", overlay, "Dot", { Visible = false })
+		self.dot = UI.Bind("Frame", overlay, modern and "Frame" or "Dot", { Visible = false })
 		self.toggle = UI.Bind("TextButton", parent, "MouseControl")
 	else
 		local overlay = Instance.new("ScreenGui")

@@ -154,4 +154,35 @@ server:Bind(folder)
 check(click(a).Ok, "missing label never prevents drawer motion")
 tweens[a]:Finish()
 server:Shutdown()
+
+server = h:load("src/GServer/Interaction/ContainerService.luau").new(services, function()
+	return true
+end)
+label1.Parent, label1.Anchored = folder, true
+local pickup = part("Part_BatteryBox1", 0.4)
+local pickupHome = pickup.CFrame
+for _, angle in ipairs({ Roblox.Vector3.new(0, 90, 0), Roblox.Vector3.new(0, 180, 0), Roblox.Vector3.new(22, 37, -14) }) do
+	folder.WorldPivot = Roblox.CFrame.Angles(math.rad(angle.X), math.rad(angle.Y), math.rad(angle.Z))
+	local offset = folder.WorldPivot:VectorToWorldSpace(Roblox.Vector3.new(0, 0, -0.8))
+	server:Bind(folder)
+	local home = a.CFrame
+	check(click(a).Ok, "rotated cabinet accepts drawer input")
+	tweens[a]:Finish()
+	check(
+		(a.CFrame.Position - home.Position - offset).Magnitude < 0.001
+			and (label1.CFrame.Position - original1.Position - offset).Magnitude < 0.001
+			and (pickup.CFrame.Position - pickupHome.Position - offset).Magnitude < 0.001,
+		"cabinet rotation moves drawer, label and stock along one local direction"
+	)
+	check(click(a).Ok, "rotated drawer closes")
+	tweens[a]:Finish()
+	check(
+		a.CFrame == home
+			and (label1.CFrame.Position - original1.Position).Magnitude < 0.0001
+			and (pickup.CFrame.Position - pickupHome.Position).Magnitude < 0.0001,
+		"rotated cabinet close restores exact authored poses"
+	)
+	server:Unbind(folder)
+end
+server:Shutdown()
 print(string.format("PASS: %d paired drawer-label checks (mocked Roblox).", total))

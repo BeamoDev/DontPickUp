@@ -2,7 +2,7 @@
 
 Code is organized into flat game systems; the six Game/Lobby roots are unchanged. There are no runtime Prototype folders. Read [the current system tree](docs/CURRENT_ARCHITECTURE.md) and [deployment instructions](docs/SOURCE_CHANGES.md) before syncing this reorganization. Keep the authored Workspace.Prototype map and both HUD screens.
 
-The active Game runtime now binds `HUD.Frames.TonightsRules` after clock-in and `HUD.Frames.GameLost` on death. Panels animate to their authored layout; loss totals come from the server. See [HUD setup and Studio checks](docs/HUD_PANELS.md).
+The active Game runtime now binds `HUD.Frames.Briefing` for the introductory single-button briefing, `HUD.Frames.ClockIn` at the timeclock, `HUD.Frames.TonightsRules` after clock-in `HUD.Frames.ShiftComplete` after a survived shift, and `HUD.Frames.GameLost` on death. ClockIn shows the account username and a permanent four-digit employee number saved by the shared Lobby/Game profile system. Panels animate to their authored layout; loss totals come from the server. See [HUD setup and Studio checks](docs/HUD_PANELS.md).
 
 The authored Settings frame works in both places with saved Music, SFX and CameraShake toggles and a downward Close animation. Opening remains yours to wire. See [settings setup](docs/SETTINGS.md).
 
@@ -16,7 +16,7 @@ The alternate authored mode includes Lobby parties and queues, profiles and sett
 
 Sync the three Game roots below and restart Play in the Game place. `GServer/Session/GameConfig.Enabled = true` binds the saved shop and prototype HUD. Keep the exact [authored prototype asset hierarchy](docs/PROTOTYPE_ASSETS.md). You spawn at the shop; enter, clock in, read the rules and finish the guided repair to open the night. At 6 AM, existing accepted phones get up to 60 seconds before results.
 
-The top-left display binds `DPU_PrototypeHUD.Clock.Night/Time`. Customers clone randomly from every valid model in `ReplicatedStorage.Assets.Characters.Female` and `.Male`, with names shown in subtitles and the same appearance kept for pickup. Both rigs use the [shared customer animation catalog](docs/CUSTOMER_ANIMATIONS.md). Customer ticket calls use the physical `Workspace.Prototype.DPU_Prototype.Fax` keypad and screen.
+The top-left display binds `HUD.Clock.Night/Time` (legacy DPU placement remains supported). Customers clone randomly from every valid model in `ReplicatedStorage.Assets.Characters.Female` and `.Male`, with names shown in subtitles and the same appearance kept for pickup. Both rigs use the [shared customer animation catalog](docs/CUSTOMER_ANIMATIONS.md). Customer ticket calls use the physical `Workspace.Prototype.DPU_Prototype.Fax` keypad and screen.
 
 Set `Enabled = false` and restart to return to the newer authored interaction/order systems. Only one mode runs. [Restoration, controls and deployment](docs/PROTOTYPE_RESTORATION.md).
 
@@ -82,7 +82,7 @@ Tag the authored Phone Model with `PhoneRepair` and retain the screenshot hierar
 
 ## Dialogue test
 
-The authored `DPU_PrototypeHUD.DialogueSubtitles.Frame` presents prototype conversations (`HUD.Subtitles` remains supported for older assets and authored mode) using `ReplicatedStorage.Assets.NPC` and your avatar for You lines. Typewriter reveal, configured portraits and fade/slide speaker transitions preserve authored text properties and size. The ten-second demo is disabled by default. Setup and controls: [DIALOGUE](docs/DIALOGUE.md).
+The authored `HUD.Dialogue` presents conversations in both Game modes (`DPU_PrototypeHUD.DialogueSubtitles` and `HUD.Subtitles` remain compatibility fallbacks) using `ReplicatedStorage.Assets.NPC` and your avatar for You lines. Typewriter reveal, configured portraits and fade/slide speaker transitions preserve authored text properties and size. The ten-second demo is disabled by default. Setup and controls: [DIALOGUE](docs/DIALOGUE.md).
 
 ## Customers and orders
 

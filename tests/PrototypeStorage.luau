@@ -441,6 +441,17 @@ check(
 	not shop:FindFirstChild("RepairPhone") and shop.Bench.Parent == shop,
 	"fallback teardown deletes only runtime phones, preserving furniture"
 )
+local placement = h:load("src/GServer/Repair/DevicePlacement.luau")
+local counterFrame, counterSize = shop.Counter.CFrame, shop.Counter.Size
+shop.Counter.CFrame = Roblox.CFrame.new(0, 4, 0) * Roblox.CFrame.Angles(math.pi / 2, 0, 0)
+shop.Counter.Size = Roblox.Vector3.new(2, 12, 1)
+local left = placement.Resolve(shop, "CounterPhone_Bench", sourceDevice.Phone)
+local right = placement.Resolve(shop, "CounterPhone_Bench2", sourceDevice.Phone)
+check(
+	math.abs((left.Position - right.Position).Magnitude - 6) < 0.001,
+	"rotated furniture separates phones along longest world-horizontal axis"
+)
+shop.Counter.CFrame, shop.Counter.Size = counterFrame, counterSize
 local mount = node("Attachment", "RepairPhoneMount", shop.Bench)
 mount.WorldCFrame = Roblox.CFrame.new(9, 8, 7) * Roblox.CFrame.Angles(0, 0.7, 0)
 local mounted = World.new(services, config)

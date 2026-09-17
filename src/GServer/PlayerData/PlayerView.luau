@@ -26,6 +26,7 @@ function View.Status(player, status, persistent)
 end
 
 function View.Publish(player, data)
+	player:SetAttribute("DPU_EmployeeNumber", data.EmployeeNumber)
 	local stats = instance(player, "Folder", "leaderstats")
 	value(stats, "IntValue", "Best Night", math.max(0, data.Progress.HighestShift - 1))
 	value(stats, "IntValue", "Credits", data.Stats.Credits)

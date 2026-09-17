@@ -1,6 +1,6 @@
 -- Public presentation/authoring defaults. Only the server accepts an open/close.
 local Config = {
-	OpenOffset = Vector3.new(0, 0, -0.8), -- World Z: 34.989 -> 34.189, relative to each box.
+	OpenOffset = Vector3.new(0, 0, -0.8), -- Cabinet-local forward (-Z), rotated into world space once when bound.
 	TweenSeconds = 0.35,
 	Distance = 8,
 	IsBox = function(part)

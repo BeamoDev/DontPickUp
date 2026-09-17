@@ -585,6 +585,54 @@ check(
 	unusedCard.Visible and protoGui.ResetOnSpawn == false and clockText.Text == "NIGHT 03",
 	"subtitle teardown restores duplicate visibility without releasing the main HUD's controls"
 )
+-- Latest owner hierarchy: HUD.Dialogue wins even while both legacy cards exist.
+local oldPrototypeCard = subtitles:Clone()
+oldPrototypeCard.Parent, oldPrototypeCard.Visible = protoGui, true
+subtitles.Name, subtitles.Parent = "Dialogue", hud
+hud.Enabled, wrapper.Visible = false, false
+local migrated = newAdapter()
+check(migrated.panel == subtitles and migrated.hud == hud, "HUD.Dialogue overrides both complete legacy cards")
+check(not oldPrototypeCard.Visible and not unusedCard.Visible, "both unused subtitle cards are suppressed")
+migrated:Update(speech, false)
+h:drain()
+check(
+	hud.Enabled and subtitles.Visible and wrapper.Visible and title.Text == "Mara",
+	"HUD.Dialogue reveals its authored hierarchy and displays server dialogue"
+)
+check(
+	viewport.CurrentCamera == authoredCamera
+		and authoredCamera.CFrame == Roblox.CFrame.new(11, 22, 33)
+		and authoredCamera.FieldOfView == 10
+		and paragraph.TextScaled
+		and subtitles.Size == originalSize,
+	"HUD.Dialogue migration preserves portrait camera and authored text layout"
+)
+migrated:Destroy()
+check(
+	oldPrototypeCard.Visible and unusedCard.Visible and not hud.Enabled,
+	"migrated card teardown restores both legacy cards and HUD visibility"
+)
+oldPrototypeCard:Destroy()
+unusedCard.Parent = nil
+local noLegacy = newAdapter()
+check(noLegacy.panel == subtitles, "HUD.Dialogue starts without either legacy subtitle card")
+noLegacy:Destroy()
+local modernDemo = Controller.new({
+	player = player,
+	storage = storage,
+	render = render,
+	tweens = tweenService,
+	joinedAt = h.time,
+	reduced = function()
+		return true
+	end,
+})
+h:drain()
+check(modernDemo.view and modernDemo.view.nodes.root == subtitles, "alternate dialogue mode also binds HUD.Dialogue")
+modernDemo:Destroy()
+subtitles.Name, subtitles.Parent = "DialogueSubtitles", protoGui
+unusedCard.Parent = hud
+hud.Enabled = true
 -- A separate HUD ScreenGui and saved Camera are not required by the screenshot layout.
 hud.Parent = nil
 authoredCamera.Parent, viewport.CurrentCamera = nil, nil

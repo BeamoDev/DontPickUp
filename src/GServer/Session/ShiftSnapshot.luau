@@ -82,6 +82,7 @@ function Methods:Snapshot(player)
 		PersonalRepairs = member and member.Repairs or 0,
 		Outcome = member and member.Outcome,
 		LossStats = member and member.LossStats and table.clone(member.LossStats) or nil,
+		CompleteStats = member and member.CompleteStats and table.clone(member.CompleteStats) or nil,
 		DeathReason = member and member.DeathReason,
 		Spectator = member and member.Spectator,
 		SaveStatus = member

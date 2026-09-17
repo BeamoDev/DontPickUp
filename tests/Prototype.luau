@@ -1031,6 +1031,31 @@ do
 		not view.modal.Visible and view.bottom.Visible and used == nil,
 		"intro acknowledgement is local and does not skip server clock-in"
 	)
+	-- HUD routing selects the authored card and keeps the multipurpose legacy modal hidden.
+	local introWanted = false
+	view.panels = {
+		Update = function(_, _, _, _, wanted)
+			introWanted = wanted
+			return false, false, true
+		end,
+		IsOpen = function()
+			return introWanted
+		end,
+	}
+	view.introSeen = nil
+	view:SetState(state)
+	check(
+		introWanted and not view.modal.Visible and not view.bottom.Visible,
+		"authored briefing suppresses legacy extra-button panel and owns modal input"
+	)
+	view:AcknowledgeIntro()
+	check(
+		not introWanted and view.introSeen == state.RunId and state.NeedsClockIn and used == nil,
+		"new Understood acknowledgement stays local and preserves required clock-in"
+	)
+	view:SetState(state)
+	check(not introWanted, "acknowledged briefing does not reopen on another snapshot")
+	view.panels = nil
 	state.Intro = nil
 	state.Target = "Timeclock"
 	view:SetState(state)
@@ -1119,10 +1144,7 @@ do
 	)
 	state.NightStartedAt, state.NightDuration, state.Phase = h.time - 60, 360, "Night"
 	view:SetState(state)
-	check(
-		view.night.Text == "NIGHT 01" and view.clock.Text == "01:00 AM",
-		"night clock derives from authoritative start time"
-	)
+	check(view.night.Text == "1" and view.clock.Text == "01:00 AM", "night clock derives from authoritative start time")
 	state.Outside, state.DoorOpen = { Since = h.time - 15, ThreatEndsAt = h.time + 7 }, false
 	view:SetState(state)
 	check(
@@ -1144,14 +1166,11 @@ do
 	state.Injury = nil
 	h.time += 30
 	view:Render()
-	check(
-		view.night.Text == "NIGHT 01" and view.clock.Text == "01:30 AM",
-		"clock advances without repeated network snapshots"
-	)
+	check(view.night.Text == "1" and view.clock.Text == "01:30 AM", "clock advances without repeated network snapshots")
 	state.TimeFrozenAt = h.time
 	h.time += 30
 	view:Render()
-	check(view.night.Text == "NIGHT 01" and view.clock.Text == "01:30 AM", "finished night freezes its displayed time")
+	check(view.night.Text == "1" and view.clock.Text == "01:30 AM", "finished night freezes its displayed time")
 	state.Phase, state.Outcome, state.Reason, state.Alive, state.CanReturn, state.CanReplay, state.Vote =
 		"Results", "Died", "AllDead", false, true, true, nil
 	view:SetState(state)
@@ -1174,6 +1193,87 @@ do
 	check(lobbyCalls == 1, "confirmed return invokes lobby action")
 	view:Destroy()
 	check(playerGui:FindFirstChild("DPU_PrototypeHUD") == view.gui, "prototype UI cleanup preserves authored HUD")
+	local hud = h.env.Instance.new("ScreenGui")
+	hud.Name, hud.Parent = "HUD", playerGui
+	local oldClock, oldBriefing, oldSignals = view.gui.Clock, view.gui.Briefing, view.gui.TeamSignals
+	oldClock.Parent, oldBriefing.Parent, oldSignals.Parent = hud, nil, nil
+	local oldObjective = view.gui.Objective
+	oldObjective.Parent = nil
+	local objectiveFrame = h.env.Instance.new("Frame")
+	objectiveFrame.Name, objectiveFrame.Parent = "Objective", hud
+	local objectiveInner = h.env.Instance.new("Frame")
+	objectiveInner.Name, objectiveInner.Parent, objectiveInner.Visible = "Frame", objectiveFrame, false
+	local objectiveText = h.env.Instance.new("TextLabel")
+	objectiveText.Name, objectiveText.Parent = "Text", objectiveInner
+	objectiveText.Size, objectiveText.TextSize, objectiveText.TextScaled = Roblox.UDim2.fromScale(0.9, 0.9), 23, true
+
+	h.skipPrototypeAssets = true
+	local migrated = h:load("src/GClient/Interface/HUDController.luau").new(playerGui, {
+		act = function(action)
+			used = action
+		end,
+		lobby = function() end,
+	})
+	h.skipPrototypeAssets = false
+	check(
+		migrated.clockPanel == oldClock and not migrated.modal and not migrated.signalMenu and hud.Enabled,
+		"HUD.Clock loads with removed DPU Clock, Briefing and TeamSignals"
+	)
+	check(
+		migrated.objective == objectiveText
+			and objectiveInner.Visible
+			and objectiveText.Visible
+			and not migrated.use
+			and objectiveText.TextScaled
+			and objectiveText.TextSize == 23
+			and objectiveText.Size == Roblox.UDim2.fromScale(0.9, 0.9),
+		"HUD.Objective.Frame binds without legacy Objective, optional Use or geometry overrides"
+	)
+	local notice
+	migrated.panels = {
+		briefing = {},
+		Update = function()
+			return true, false, true
+		end,
+		Notice = function(_, value)
+			notice = value
+		end,
+		IsOpen = function()
+			return notice ~= nil
+		end,
+		Destroy = function() end,
+	}
+	migrated:SetState({
+		RunId = "new",
+		Phase = "Results",
+		CanReplay = true,
+		Reason = "Dawn",
+		NightsCleared = 1,
+		Repaired = 4,
+	})
+	check(notice and notice.Action == "Replay", "removed legacy results route to new single-button briefing")
+	migrated:AcknowledgeNotice()
+	check(used == "Replay", "successful shift can still continue through validated replay")
+	migrated:SetState({
+		RunId = "new",
+		Phase = "Night",
+		Alive = true,
+		Event = { Id = "call-new", Kind = "Call", EndsAt = h.time + 20, Warning = "Phone ringing" },
+	})
+	used = nil
+	migrated:RequestAnswer()
+	check(
+		notice and notice.Action == "ArmAnswer" and not used,
+		"first receiver click still warns before harmful answer"
+	)
+	migrated:AcknowledgeNotice()
+	check(not used, "Understood closes warning without answering")
+	migrated:RequestAnswer()
+	check(used == "Answer", "explicit second receiver click confirms current warned call")
+	migrated:Destroy()
+	oldClock.Parent, oldBriefing.Parent, oldSignals.Parent = view.gui, view.gui, view.gui
+	oldObjective.Parent = view.gui
+	hud:Destroy()
 	-- Delayed tween completions exercise ownership, cancellation and restore paths.
 	local camera = h.instance("Camera")
 	camera.ViewportSize = Roblox.Vector2.new(1100, 800)
@@ -1395,6 +1495,28 @@ do
 		camera.FieldOfView == 73 and presentation.highlight.Parent ~= nil and presentation.card.Parent ~= nil,
 		"cleanup restores camera and preserves authored visuals"
 	)
+	-- Loading after a saved helper was deleted still mounts the actual repair controller.
+	local savedRepairHighlight = presentation.highlight
+	local highlightParent = savedRepairHighlight.Parent
+	savedRepairHighlight.Parent = nil
+	local directLoad = Harness.Environment().load
+	local recovered = directLoad(h, "src/GClient/Repair/RepairPresentation.luau").new(presentation.d, playerGui)
+	check(
+		recovered.highlight.Parent == highlightParent and recovered.highlight ~= savedRepairHighlight,
+		"repair presentation starts without saved DPU_RepairFocus"
+	)
+	recovered:Update({ Alive = true, Phase = "Tutorial", Target = "Timeclock" }, false)
+	check(
+		recovered.highlight.Adornee == world.stations.Timeclock and recovered.highlight.Enabled,
+		"fallback repair highlight follows the next real objective"
+	)
+	recovered:Destroy()
+	recovered:Destroy()
+	check(
+		recovered.highlight.Parent == nil and recovered.card.Parent == playerGui,
+		"repair teardown removes only its temporary highlight, retaining authored UI"
+	)
+	savedRepairHighlight.Parent = highlightParent
 	local after = #tweenList
 	inputSignal:Fire({ KeyCode = "KeyCode.Q" }, false)
 	renderSignal:Fire()
@@ -1648,6 +1770,97 @@ do
 		"copied reference is restored without modifying the world camera"
 	)
 	scares.viewport.CurrentCamera, savedScareCamera.Parent = savedScareCamera, scares.viewport
+	-- Authored HUD scare uses the real monster, its saved framing, and a slow viewport-only zoom.
+	local newHud = h.env.Instance.new("ScreenGui")
+	newHud.Name, newHud.Parent = "HUD", playerGui
+	local oldScareParent = scares.frame.Parent
+	scares.frame.Parent = newHud
+	local oldHead = scares.head
+	oldHead.Parent = nil
+	local monster = h.env.Instance.new("Model")
+	monster.Name, monster.Parent = "ScaryNPC", scares.viewport
+	local monsterRoot = h.env.Instance.new("Part")
+	monsterRoot.Name, monsterRoot.Parent, monsterRoot.CFrame = "RootPart", monster, Roblox.CFrame.new(8, 3, -2)
+	monster.Archivable = false
+	local originalNew = h.env.Instance.new
+	local playedTracks = {}
+	h.env.Instance.new = function(class)
+		local item = originalNew(class)
+		if class == "Animator" then
+			item.LoadAnimation = function(_, clip)
+				local track = {
+					Id = clip.AnimationId,
+					Play = function(self)
+						self.played = true
+					end,
+					Stop = function(self)
+						self.stopped = true
+					end,
+					Destroy = function(self)
+						self.destroyed = true
+					end,
+				}
+				table.insert(playedTracks, track)
+				return track
+			end
+		end
+		return item
+	end
+	h.skipPrototypeAssets = true
+	local animated = ScarePresentation.new(scares.d, view.gui)
+	h.skipPrototypeAssets = false
+	check(
+		animated.frame.Parent == newHud
+			and animated.actor
+			and not animated.head
+			and monster.Parent == nil
+			and monster.Archivable == false,
+		"new scare binds HUD and pools an animated copy without requiring old Part head"
+	)
+	check(
+		animated.actor.model.RootPart.CFrame == monsterRoot.CFrame and animated.actor.world:IsA("WorldModel"),
+		"monster keeps authored framing inside animation-enabled WorldModel"
+	)
+	local animState = { RunId = "monster-run", Scare = { Id = "animation", Kind = "Visitor", At = h.time } }
+	animated:Update(animState)
+	local track = animated.actor.track
+	check(
+		track and track.played and animated.zoom and animated.untilAt == h.time + 2.5,
+		"monster plays a supplied animation throughout a bounded slow zoom"
+	)
+	check(
+		animated.camera.CFrame == savedScareFrame
+			and animated.camera.FieldOfView == math.max(1, savedScareFOV * 0.7)
+			and camera.CFrame == original,
+		"new scare preserves authored camera angle and never changes world camera"
+	)
+	local ids = {}
+	for _, clip in ipairs(h:load("src/GClient/Effects/MonsterAnimations.luau").Clips) do
+		ids["rbxassetid://" .. clip.Id] = true
+	end
+	check(ids[track.Id], "scare chooses only supplied Monster 2 animations")
+	animated:Update(animState)
+	check(animated.actor.track == track and #playedTracks == 1, "repeated snapshot never restarts or reloads animation")
+	animated.zoom.Completed:Fire()
+	reduced = true
+	animated:Update(animState)
+	check(
+		track.stopped
+			and not animated.zoom
+			and not animated.viewport.Visible
+			and animated.camera.FieldOfView == savedScareFOV,
+		"reduced motion stops animation/zoom and restores FOV"
+	)
+	reduced = false
+	animated:Destroy()
+	check(
+		track.destroyed and monster.Parent == scares.viewport and animated.actor.world.Parent == nil,
+		"scare teardown releases tracks and restores the original rig"
+	)
+	h.env.Instance.new = originalNew
+	monster:Destroy()
+	oldHead.Parent, scares.frame.Parent = scares.viewport, oldScareParent
+	newHud:Destroy()
 	check(
 		world.workshop:GiveGear(p, "Tester") and world.workshop:GiveGear(p, "Screwdriver"),
 		"workshop issues separate reusable kit Tools"
@@ -2093,6 +2306,97 @@ do
 			and physical.nodes.screw1.Part.Size == world.repairPhone.Screws.Screw1.Size,
 		"physical screw gesture uses authored mesh without resizing source"
 	)
+	local screwNode = physical.nodes.screw1
+	local hitTest = { nodes = { screwNode } }
+	local radius = screwNode.Spec.HitRadius
+	check(
+		radius <= 0.12
+			and physical.Hit(hitTest, screwNode.Spec.Position) == screwNode
+			and physical.Hit(hitTest, screwNode.Spec.Position + Roblox.Vector3.new(radius + 0.01, 0, 0)) == nil,
+		"screws have small circular hit targets without the old wide padding"
+	)
+	local savedRay = camera.ViewportPointToRay
+	camera.ViewportPointToRay = function()
+		return {
+			Origin = physical.frameOfPhone:PointToWorldSpace(screwNode.Spec.Position + Roblox.Vector3.new(3, 5, 2)),
+			Direction = physical.frameOfPhone:VectorToWorldSpace(Roblox.Vector3.new(-3, -5, -2).Unit),
+		}
+	end
+	local picked, pickedPoint = physical:Pick(Roblox.Vector2.zero)
+	check(
+		picked == screwNode and (pickedPoint - screwNode.Spec.Position).Magnitude < 0.001,
+		"angled camera targets the actual screw height without a table-plane pointer offset"
+	)
+	camera.ViewportPointToRay = savedRay
+	-- Mouse event coordinates differ from the live cursor by the GUI inset.
+	-- Exercise press, render-driven movement, release and the single-request guard.
+	local cursor = Roblox.Vector2.zero
+	physicalInput.GetMouseLocation = function()
+		return cursor
+	end
+	local mouseRay = camera.ViewportPointToRay
+	camera.ViewportPointToRay = function(_, x, y)
+		return mouseRay(camera, (x - 500) / 100, (y - 350) / 100)
+	end
+	for _, inset in ipairs({ 0, 36, 58 }) do
+		for index = 1, 4 do
+			local node = physical.nodes["screw" .. index]
+			cursor = Roblox.Vector2.new(500 + node.Spec.Position.X * 100, 350 + node.Spec.Position.Z * 100)
+			local button = {
+				UserInputType = h.env.Enum.UserInputType.MouseButton1,
+				Position = Roblox.Vector3.new(cursor.X, cursor.Y - inset, 0),
+			}
+			physicalInput.InputBegan:Fire(button, true)
+			check(not physical.drag, "processed UI clicks cannot start a screw gesture")
+			physicalInput.InputBegan:Fire(button, false)
+			check(
+				physical.drag and physical.drag.Node == node,
+				"live mouse selects the visible screw without a GUI-inset offset"
+			)
+			physical:CancelDrag()
+		end
+	end
+	cursor = Roblox.Vector2.new(500 + screwNode.Spec.Position.X * 100, 350 + screwNode.Spec.Position.Z * 100)
+	local mouseButton = {
+		UserInputType = h.env.Enum.UserInputType.MouseButton1,
+		Position = Roblox.Vector3.new(cursor.X, cursor.Y - 58, 0),
+	}
+	local beforeMouse = physicalCalls
+	physicalInput.InputBegan:Fire(mouseButton, false)
+	cursor += Roblox.Vector2.new(15, 0)
+	physicalInput.InputChanged:Fire({
+		UserInputType = h.env.Enum.UserInputType.MouseMovement,
+		Position = mouseButton.Position,
+	})
+	renderSignal:Fire()
+	check(
+		physical.drag and math.abs(physical.drag.Last.X - physical.drag.Start.X - 0.15) < 0.001,
+		"mouse movement uses live coordinates instead of offset event coordinates"
+	)
+	cursor += Roblox.Vector2.new(20, 0)
+	renderSignal:Fire()
+	check(
+		physical.drag
+			and math.abs(physical.drag.Last.X - physical.drag.Start.X - 0.35) < 0.001
+			and physicalCalls == beforeMouse,
+		"existing render loop tracks latest cursor without stale button positions or movement remotes"
+	)
+	physicalInput.InputEnded:Fire(mouseButton)
+	check(
+		physicalCalls == beforeMouse + 1 and physicalMove == 1 and not physical.drag,
+		"release uses current mouse position and submits exactly one screw turn"
+	)
+	physicalInput.InputEnded:Fire(mouseButton)
+	check(physicalCalls == beforeMouse + 1, "duplicate mouse release cannot resubmit the screw turn")
+	physical.submitted = nil -- Keep the original untouched puzzle for the touch/server checks below.
+	camera.ViewportPointToRay = savedRay
+	renderSignal:Fire()
+	check(screwNode.Indicator and screwNode.Indicator.gui.Enabled, "screw has non-blocking screen indicator")
+	local indicator = h:load("src/GClient/Repair/ScrewIndicator.luau")
+	indicator.Update(screwNode.Indicator, screwNode.Spec, true, 0.5, h.time, false)
+	check(screwNode.Indicator.ring.Rotation == 180, "ring rotation follows screw turn progress")
+	indicator.Update(screwNode.Indicator, screwNode.Spec, false, 0, h.time, true)
+	check(screwNode.Indicator.ring.Rotation == 0, "reduced motion disables ring rotation")
 	for index = 1, 4 do
 		local node = physical.nodes["screw" .. index]
 		gesture(node, node.Spec.Position + Roblox.Vector3.new(0.4, 0, 0))
@@ -2111,9 +2415,60 @@ do
 	gesture(physical.nodes.screen, physical.nodes.socket.Spec.Position)
 	acceptPhysical()
 	check(
-		physicalPuzzle.DeviceStage == "Probes" and physical.hint.Text:find("PRESS TO CHECK"),
-		"actual battery removal unlocks readable diagnostics"
+		physicalPuzzle.DeviceStage == "Probes" and not physical.folder and not physical.mode.Visible,
+		"battery removal switches away from floating physical probe/replace blocks"
 	)
+	local diagnosticPayload
+	local diagnosticUi = h:load("src/GClient/Repair/PuzzleView.luau").new(playerGui, function(_, payload)
+		diagnosticPayload = payload
+	end, {
+		player = p,
+		tweens = presentation.d.tweens,
+		reduced = function()
+			return reduced
+		end,
+	})
+	diagnosticUi:Update(physicalState, false, false)
+	check(
+		diagnosticUi.panel.Visible
+			and diagnosticUi.tasks.dials[1].Visible
+			and diagnosticUi.tasks.buttons[1].Text:find("RUN TEST")
+			and not diagnosticUi.tasks.buttons[4].Active,
+		"on-screen diagnosis starts with meters and locked replacement choices"
+	)
+	check(
+		not puzzleRules.Input(physicalPuzzle, 4, physicalPuzzle.Revision, h.time),
+		"server rejects selecting a replacement before completing all tests"
+	)
+	for index = 1, 3 do
+		diagnosticUi.tasks.buttons[index].Activated:Fire()
+		check(
+			diagnosticPayload.Move == index and diagnosticPayload.WorkId == physicalState.Work.Id,
+			"diagnostic card sends revision-scoped test intent"
+		)
+		check(
+			puzzleRules.Input(physicalPuzzle, index, diagnosticPayload.PuzzleRevision, h.time),
+			"server accepts component test"
+		)
+		physicalState.Work.Puzzle = puzzleRules.Snapshot(physicalPuzzle)
+		diagnosticUi:Update(physicalState, false, false)
+	end
+	check(
+		diagnosticUi.tasks.buttons[2].Text:find("FAULT")
+			and diagnosticUi.tasks.buttons[1].Text:find("PASS")
+			and diagnosticUi.tasks.buttons[5].Active,
+		"server readings drive visible fault and unlocked choices"
+	)
+	diagnosticUi.tasks.buttons[5].Activated:Fire()
+	local accepted, solved = puzzleRules.Input(physicalPuzzle, 5, diagnosticPayload.PuzzleRevision, h.time)
+	check(accepted and solved, "choosing the faulty speaker completes diagnosis on server")
+	diagnosticUi:Update(physicalState, false, true)
+	check(
+		not diagnosticUi.panel.Visible and next(diagnosticUi.tasks.diagnosis.tweens) == nil,
+		"blocking UI cancels diagnosis animations"
+	)
+	diagnosticUi:Destroy()
+	startPhysical(benchTasks.New("Screen", 3, h.time))
 	physical.mode.Activated:Fire()
 	check(not physical:Update(physicalState, false, false) and not physical.folder, "button fallback clears 3D pieces")
 	physical.mode.Activated:Fire()

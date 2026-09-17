@@ -32,6 +32,8 @@ function View.Adapt(specs, puzzle, phone, frame)
 			local removed = puzzle.DeviceStage == "OpenScrews" and puzzle.Turns[spec.Index] > 0
 				or puzzle.DeviceStage == "CloseScrews" and puzzle.Turns[spec.Index] == 0
 			art(spec, part, frame, part and part:GetAttribute(removed and "DPU_DeviceLoose" or "DPU_DeviceHome"))
+			spec.HitRadius = math.clamp(math.min(spec.Size.X, spec.Size.Z) * 0.35, 0.055, 0.12)
+			spec.Text = ""
 		elseif puzzle.Kind == "Screen" then
 			local name = puzzle.Component == "BACK COVER" and "BackCover"
 				or puzzle.Component == "BATTERY" and "Battery"

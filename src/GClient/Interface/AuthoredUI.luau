@@ -3,6 +3,7 @@
 local UI = {}
 local claimed = setmetatable({}, { __mode = "k" })
 local saved = setmetatable({}, { __mode = "k" })
+local generated = setmetatable({}, { __mode = "k" })
 local groups = {
 	GuiObject = {
 		"Visible",
@@ -87,8 +88,31 @@ function UI.Bind(class, parent, name, initial)
 	end
 	return item
 end
+function UI.Highlight(parent, name, defaults)
+	assert(parent, "[DPU] Missing parent for interaction highlight " .. name)
+	for _, child in ipairs(parent:GetChildren()) do
+		if child.Name == name and child:IsA("Highlight") and not claimed[child] then
+			return UI.Bind("Highlight", parent, name, { Enabled = false, Adornee = nil })
+		end
+	end
+	-- Only this disposable effect may be generated; fixed authored map/UI bindings remain strict.
+	local item = Instance.new("Highlight")
+	item.Name, item.Enabled, item.Adornee = name, false, nil
+	item.FillTransparency, item.OutlineTransparency = 0.9, 0
+	for key, value in pairs(defaults or {}) do
+		item[key] = value
+	end
+	item.Parent = parent
+	generated[item], claimed[item] = true, true
+	return item
+end
 function UI.Release(item)
 	if not item then
+		return
+	end
+	if generated[item] then
+		generated[item], claimed[item] = nil, nil
+		item:Destroy()
 		return
 	end
 	local descendants = item:GetDescendants()

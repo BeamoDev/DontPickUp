@@ -2,11 +2,19 @@ local UI = require(script.Parent.Parent.Interface.AuthoredUI)
 local SceneStorage = game:GetService("ReplicatedStorage"):WaitForChild("GShared", 30)
 local Scene = require(SceneStorage:WaitForChild("World", 30):WaitForChild("SceneReferences", 30))
 -- One pooled local viewport. No world camera override, flashing, or gameplay effects.
+local Actor = require(script.Parent.ScareActor)
+local Animations = require(script.Parent.MonsterAnimations)
 local Scares = {}
 Scares.__index = Scares
 function Scares.new(deps, gui)
 	local self = setmetatable({ d = deps }, Scares)
-	self.frame = UI.Bind("Frame", gui, "Scare", { Visible = false })
+	local hud = gui.Parent and gui.Parent:FindFirstChild("HUD")
+	self.frame = UI.Bind("Frame", hud and hud:FindFirstChild("Scare") and hud or gui, "Scare", { Visible = false })
+	if self.frame.Parent:IsA("ScreenGui") then
+		self.screen = self.frame.Parent
+		self.screenEnabled, self.screenReset = self.screen.Enabled, self.screen.ResetOnSpawn
+		self.screen.Enabled, self.screen.ResetOnSpawn = true, false
+	end
 	self.viewport = UI.Bind("ViewportFrame", self.frame, "Visitor")
 	local camera = self.viewport.CurrentCamera
 	if camera == deps.workspace.CurrentCamera then
@@ -35,11 +43,30 @@ function Scares.new(deps, gui)
 	self.ambient = UI.Bind("Sound", ambientParent, "ShopAnomaly")
 	self.ambient:Stop()
 	self.fallback:Stop()
-	self.head = UI.Bind("Part", self.viewport)
+	self.actor = Actor.new(self.viewport)
+	if not self.actor then
+		local head = self.viewport:FindFirstChild("Part")
+		if head and head:IsA("Part") then
+			self.head = UI.Bind("Part", self.viewport)
+		else
+			warn("[DPU] Scare.Visitor needs the authored ScaryNPC model; using the caption until it is available.")
+		end
+	end
+	self.baseCFrame, self.baseFOV = camera.CFrame, camera.FieldOfView
 	self.caption = UI.Bind("TextLabel", self.frame, "Caption", { Text = "" })
 	return self
 end
 function Scares:Clear()
+	if self.actor then
+		self.actor:Stop()
+	end
+	if self.zoom then
+		self.zoom:Cancel()
+		self.zoom = nil
+	end
+	if self.actor then
+		self.camera.CFrame, self.camera.FieldOfView = self.baseCFrame, self.baseFOV
+	end
 	if self.lunge then
 		self.lunge:Cancel()
 		self.lunge = nil
@@ -69,6 +96,14 @@ function Scares:Update(state)
 		self:Clear()
 	end
 	if self.untilAt and self.d.reduced() then
+		if self.actor then
+			self.actor:Stop()
+		end
+		if self.zoom then
+			self.zoom:Cancel()
+			self.zoom = nil
+			self.camera.FieldOfView = self.baseFOV
+		end
 		self.viewport.Visible = false
 		if self.lunge then
 			self.lunge:Cancel()
@@ -106,8 +141,9 @@ function Scares:Update(state)
 	end
 	self:Clear()
 	local reduced = self.d.reduced()
-	self.untilAt = now + (reduced and 1.5 or 0.8)
-	self.frame.Visible, self.viewport.Visible = true, not reduced
+	local duration = self.actor and Animations.Duration or 0.8
+	self.untilAt = now + (reduced and 1.5 or duration)
+	self.frame.Visible, self.viewport.Visible = true, not reduced and (self.actor ~= nil or self.head ~= nil)
 	self.caption.Text = scare.Fatal and "IT FOUND YOU."
 		or scare.Damage and ("YOU WERE HIT.  -" .. scare.Damage .. " HP")
 		or scare.Kind == "Signal" and "THAT WAS NOT A BROADCAST."
@@ -117,23 +153,40 @@ function Scares:Update(state)
 		local variant = math.clamp(scare.Variant or 1, 1, 3)
 		local shake = not self.d.shake or self.d.shake()
 		local angle = shake and (variant - 2) * 0.16 or 0
-		self.head.Color = scare.Kind == "Signal" and Color3.fromRGB(81, 107, 72) or Color3.fromRGB(145, 142, 115)
-		self.camera.CFrame = CFrame.new(shake and (variant - 2) * 0.5 or 0, 0.1, 7) * CFrame.Angles(0, 0, angle)
-		self.camera.FieldOfView = 54
-		if shake then
-			self.lunge = self.d.tweens:Create(
+		if self.actor then
+			self.actor:Play()
+			self.zoom = self.d.tweens:Create(
 				self.camera,
-				TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-				{
-					CFrame = CFrame.new(0, -0.1, 4.2) * CFrame.Angles(0, 0, -angle),
-					FieldOfView = 43,
-				}
+				TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+				{ FieldOfView = math.max(1, self.baseFOV * Animations.ZoomScale) }
 			)
-			self.lunge:Play()
+			self.zoom:Play()
+		elseif self.head then
+			self.head.Color = scare.Kind == "Signal" and Color3.fromRGB(81, 107, 72) or Color3.fromRGB(145, 142, 115)
+			self.camera.CFrame = CFrame.new(shake and (variant - 2) * 0.5 or 0, 0.1, 7) * CFrame.Angles(0, 0, angle)
+			self.camera.FieldOfView = 54
+			if shake then
+				self.lunge = self.d.tweens:Create(
+					self.camera,
+					TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{
+						CFrame = CFrame.new(0, -0.1, 4.2) * CFrame.Angles(0, 0, -angle),
+						FieldOfView = 43,
+					}
+				)
+				self.lunge:Play()
+			end
 		end
 		self.tween = self.d.tweens:Create(
 			self.viewport,
-			TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+			TweenInfo.new(
+				self.actor and 0.4 or 0.8,
+				Enum.EasingStyle.Quad,
+				Enum.EasingDirection.In,
+				0,
+				false,
+				self.actor and duration - 0.4 or 0
+			),
 			{ ImageTransparency = 1 }
 		)
 		self.tween:Play()
@@ -193,6 +246,12 @@ function Scares:Destroy()
 	self.destroyed = true
 	self:Clear()
 	self.ambient:Stop()
+	if self.actor then
+		self.actor:Destroy()
+	end
+	if self.screen then
+		self.screen.Enabled, self.screen.ResetOnSpawn = self.screenEnabled, self.screenReset
+	end
 	if self.cameraState then
 		for key, value in pairs(self.cameraState) do
 			self.camera[key] = value

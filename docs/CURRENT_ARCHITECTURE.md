@@ -8,7 +8,7 @@ Each place has one server Bootstrap.server and one client Bootstrap.local under 
 
 Game server Bootstrap creates common PlayerData/Networking services, then SessionService starts admission and GameService. GameService binds WorldService and ShiftService. ShiftService composes Session state/actions/snapshots with Orders, Repair, Horror and Story modules through explicit requires and dependencies. Gameplay validation, stock, private phone contents, narrative decisions and save outcomes stay on the server. Closing gives accepted orders 60 seconds and settles once.
 
-Game client Bootstrap starts GameController, which waits for the selected server mode and starts settings plus SessionController. SessionController connects server snapshots/requests to Interface, Repair, Interaction, Effects and Camera. HUDController coordinates modal input; ShiftPanelController supplies the authored rules/death cards. CameraController owns cursor/first-person policy and InspectionCamera owns tweened inspections. The alternate mode uses the same camera and presentation helpers without running a second active stack.
+Game client Bootstrap starts GameController, which waits for the selected server mode and starts settings plus SessionController. SessionController connects server snapshots/requests to Interface, Repair, Interaction, Effects and Camera. HUDController coordinates modal input; ShiftPanelController supplies the authored briefing, clock-in, rules and death cards. CameraController owns cursor/first-person policy and InspectionCamera owns tweened inspections. The alternate mode uses the same camera and presentation helpers without running a second active stack.
 
 Lobby server Bootstrap starts PlayerData/Networking/Travel and Matchmaking. QueueService owns membership/readiness/countdowns; PartyService owns parties. World/LobbyWorldService binds authored queue geometry/signs and server billboards. Lobby client Bootstrap starts Matchmaking/QueueController, which owns QueueRequests and Interface/QueueView plus settings. The Lobby UI keeps its authored geometry.
 
@@ -76,7 +76,7 @@ InspectionCamera captures native camera/FOV/subject and local character visibili
 
 ## Studio verification
 
-1. Stop Play. Sync all three roots for each place using the manifest, remove obsolete scripts, confirm exactly one Bootstrap and one client entrypoint per place, then restart. Game publishes PrototypeEnabled before the client creates any camera/HUD. Verify both switch settings separately; default true must reuse Workspace.Prototype.DPU_Prototype, StarterGui.DPU_PrototypeHUD/DPU_Cursor, HUD.Subtitles and ReplicatedStorage.Remotes, with no second shop/HUD or authored test bench.
+1. Stop Play. Sync all three roots for each place using the manifest, remove obsolete scripts, confirm exactly one Bootstrap and one client entrypoint per place, then restart. Game publishes PrototypeEnabled before the client creates any camera/HUD. Verify both switch settings separately; default true must reuse Workspace.Prototype.DPU_Prototype, StarterGui.DPU_PrototypeHUD/DPU_Cursor, HUD.Dialogue and ReplicatedStorage.Remotes, with no second shop/HUD or authored test bench.
 2. Hover/click all edges and child meshes of Container, Fax, Drink, throw and tv. Test drawers through handles/Label parts. Check imported MeshPart CollisionFidelity/CanQuery and the authored Highlight on transparent objects.
 3. Confirm non-collidable trim does not block keys/drawers, while collidable walls/terrain do. Test outside the eight-stud reach, behind UI, while typing, and across tags/removal/streaming. Do not make wall parts non-collidable/query-excluded.
 4. On touch, test taps, drag away and back, two fingers, thumbstick plus camera, and two-tap carry/throw. Verify no accidental request or duplicate activation. Check keyboard and controller fallback.
@@ -90,7 +90,7 @@ InspectionCamera captures native camera/FOV/subject and local character visibili
 
 Phone repair authoring and validation are documented in [PHONE_REPAIR](PHONE_REPAIR.md). It uses exact `PhoneRepair` on the whole Model, separate from Fax.
 
-GameController also creates the client-only DialogueController before waiting for gameplay networking. It binds the authored HUD.Subtitles, owns its viewport portraits/transitions, and runs the configurable ten-second demo. See [DIALOGUE](DIALOGUE.md).
+GameController also creates the client-only DialogueController before waiting for gameplay networking. It binds the authored HUD.Dialogue, owns its viewport portraits/transitions, and runs the configurable ten-second demo. See [DIALOGUE](DIALOGUE.md).
 
 ## Customer/order integration
 
@@ -102,7 +102,7 @@ Preparation retains clock-in, directives and the guided first repair (`Tutorial`
 
 ## Saved prototype scene
 
-The prototype binds the copied Studio map and UI instead of constructing them. See [PROTOTYPE_ASSETS](PROTOTYPE_ASSETS.md) for exact paths, retained descendants, dynamic-object ownership and Studio checks. Shared SceneReferences resolves the nested world. AuthoredUI binds fixed client controls; prototype SubtitleView delegates to the authored DialogueView, preferring DPU_PrototypeHUD.DialogueSubtitles with nested Frame content. HUD.Subtitles is a compatibility fallback. Existing viewport cameras are preserved; a missing camera uses DialogueConfig without requiring another ScreenGui.
+The prototype binds the copied Studio map and UI instead of constructing them. See [PROTOTYPE_ASSETS](PROTOTYPE_ASSETS.md) for exact paths, retained descendants, dynamic-object ownership and Studio checks. Shared SceneReferences resolves the nested world. AuthoredUI binds fixed client controls; prototype SubtitleView delegates to the authored DialogueView, preferring HUD.Dialogue with optional nested Frame content. DPU_PrototypeHUD.DialogueSubtitles and HUD.Subtitles are compatibility fallbacks. Existing viewport cameras are preserved; a missing camera uses DialogueConfig without requiring another ScreenGui.
 
 ## Current authored prototype integration
 

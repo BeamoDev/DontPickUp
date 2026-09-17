@@ -6,7 +6,7 @@ function View.new(gui, deps)
 	local playerGui = deps.player:FindFirstChild("PlayerGui") or gui.Parent
 	local nodes = assert(
 		DialogueView.Find(playerGui, gui),
-		"[DPU] Missing authored DPU_PrototypeHUD.DialogueSubtitles (or HUD.Subtitles): Title, Paragraph and CharacterViewPort.ViewportFrame, optionally inside Frame"
+		"[DPU] Missing authored HUD.Dialogue (legacy HUD.Subtitles / DPU_PrototypeHUD.DialogueSubtitles also supported): Title, Paragraph and CharacterViewPort.ViewportFrame, optionally inside Frame"
 	)
 	local self = setmetatable({ d = deps, panel = nodes.root, speaker = nodes.title, line = nodes.paragraph }, View)
 	-- PrototypeView already owns the main HUD binding. Only capture our own
@@ -14,15 +14,20 @@ function View.new(gui, deps)
 	self.hud, self.resetOnSpawn = nodes.hud, nodes.hud.ResetOnSpawn
 	self.hud.ResetOnSpawn = false
 	self.view = DialogueView.new(nodes, deps)
-	local old = gui:FindFirstChild("DialogueSubtitles")
-	if old == nodes.root then
-		local hud = playerGui:FindFirstChild("HUD")
-		old = hud and hud:FindFirstChild("Subtitles")
+	self.legacy = {}
+	local function suppress(hud, name)
+		local card = hud and hud:FindFirstChild(name)
+		if card and card ~= nodes.root and card:IsA("GuiObject") then
+			self.legacy[card] = card.Visible
+			card.Visible = false
+		end
 	end
-	if old and old ~= nodes.root and old:IsA("GuiObject") then
-		self.legacy, self.legacyVisible = old, old.Visible
-		old.Visible = false
+	suppress(gui, "DialogueSubtitles")
+	local oldHud = playerGui:FindFirstChild("DPU_PrototypeHUD")
+	if oldHud ~= gui then
+		suppress(oldHud, "DialogueSubtitles")
 	end
+	suppress(playerGui:FindFirstChild("HUD"), "Subtitles")
 	return self
 end
 function View:Hide()
@@ -97,8 +102,8 @@ function View:Destroy()
 	end
 	self.view:Destroy()
 	self.hud.ResetOnSpawn = self.resetOnSpawn
-	if self.legacy then
-		self.legacy.Visible = self.legacyVisible
+	for card, visible in pairs(self.legacy) do
+		card.Visible = visible
 	end
 end
 return View

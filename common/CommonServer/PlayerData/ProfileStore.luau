@@ -11,6 +11,7 @@ function ProfileStore:Acquire(userId, token, cancelled)
 	local d = self.d
 	local deadline = d.clock() + d.config.LoadTimeoutSeconds
 	local attempt = 0
+	local employeeNumber = math.random(1000, 9999) -- Stable across UpdateAsync callback/reply retries.
 	while not cancelled() and d.clock() < deadline do
 		attempt += 1
 		local reason = "Busy"
@@ -27,7 +28,11 @@ function ProfileStore:Acquire(userId, token, cancelled)
 			if old and old.Lease and old.Lease.Token ~= token and old.Lease.Expires > now then
 				return nil
 			end
-			local nextRecord = old and d.schema.Copy(old) or { Format = 1, Data = data }
+			if data.EmployeeNumber == 0 then
+				data.EmployeeNumber = employeeNumber
+			end
+			local nextRecord = old and d.schema.Copy(old) or { Format = 1 }
+			nextRecord.Data = data -- Commit migration and identity before publishing Ready.
 			nextRecord.Lease = { Token = token, Expires = now + d.config.LeaseSeconds }
 			return nextRecord
 		end)

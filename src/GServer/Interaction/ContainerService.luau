@@ -25,6 +25,7 @@ function Containers:Add(box)
 		box = box,
 		folder = box.Parent,
 		closed = box.CFrame,
+		offset = box.Parent:GetPivot():VectorToWorldSpace(Config.OpenOffset),
 		id = self.s.HttpService:GenerateGUID(false),
 		revision = 0,
 		open = false,
@@ -196,11 +197,11 @@ function Containers:Request(player, payload)
 	box:SetAttribute("DPU_ContainerOpen", record.open)
 	box:SetAttribute("DPU_ContainerRevision", record.revision)
 	box:SetAttribute("DPU_ContainerBusy", true)
-	local target = record.open and record.closed + Config.OpenOffset or record.closed
+	local target = record.open and record.closed + record.offset or record.closed
 	self:PairLabel(record)
 	local label, labelTarget = record.label, nil
 	if label then
-		labelTarget = record.open and record.labelClosed + Config.OpenOffset or record.labelClosed
+		labelTarget = record.open and record.labelClosed + record.offset or record.labelClosed
 		-- An unanchored welded label already follows the box; a second CFrame tween would fight its assembly.
 		local followsBox = not label.Anchored and table.find(label:GetConnectedParts(true), box) ~= nil
 		if not followsBox then

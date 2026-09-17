@@ -95,7 +95,8 @@ local function fixture()
 			end,
 		},
 	}
-	local data = h:load("src/LServer/PlayerData/DataService.luau").new(services, h:load("src/LServer/Configuration/ServerConfig.luau"))
+	local data = h:load("src/LServer/PlayerData/DataService.luau")
+		.new(services, h:load("src/LServer/Configuration/ServerConfig.luau"))
 	return h, data, f
 end
 
@@ -106,6 +107,11 @@ do
 		check(data:Load(player), "concurrent fixture loads")
 	end)
 	h:run()
+	check(
+		player:GetAttribute("DPU_EmployeeNumber") == f.records.player_1.Data.EmployeeNumber
+			and player:GetAttribute("DPU_EmployeeNumber") >= 1000,
+		"published employee number matches already committed server profile"
+	)
 	f.delay = 5
 	h.env.task.spawn(function()
 		check(data:Save(player, false), "in-flight autosave completes")
@@ -120,10 +126,7 @@ do
 		data:Remove(player)
 	end)
 	h:run()
-	check(
-		f.records.player_1.Data.Stats.CasesSolved == 7,
-		"final save includes mutation after earlier snapshot"
-	)
+	check(f.records.player_1.Data.Stats.CasesSolved == 7, "final save includes mutation after earlier snapshot")
 	check(
 		f.records.player_1.Lease == nil and data.entries[player] == nil,
 		"departure waits for in-flight save before release"
@@ -185,10 +188,7 @@ do
 		data:Shutdown()
 	end)
 	h:run()
-	check(
-		f.records.player_1.Lease == nil and data.entries[player] == nil,
-		"parallel shutdown confirms final release"
-	)
+	check(f.records.player_1.Lease == nil and data.entries[player] == nil, "parallel shutdown confirms final release")
 end
 
 print(string.format("PASS: %d concurrent save/load lifecycle checks.", total))

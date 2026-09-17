@@ -115,6 +115,11 @@ function View:Update(state, busy, blocked)
 	end
 	self.hint.Text = hint .. "\n" .. (puzzle.Feedback or "")
 	if advanced then
+		if puzzle.Kind == "Probes" then
+			self.title.Text = "PHONE DIAGNOSTIC / " .. puzzle.Progress .. " OF 3"
+			hint = puzzle.Progress == 3 and "Choose the part whose meter shows FAULT."
+				or "Run each test. Find the failed component."
+		end
 		self.hint.Text = hint
 			.. "\n"
 			.. (puzzle.Kind == "Memory" and (puzzle.Progress .. "/" .. puzzle.Count .. " correct. ") or "")

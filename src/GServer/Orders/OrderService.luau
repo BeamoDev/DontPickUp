@@ -146,6 +146,10 @@ function Methods:_resolveVote(lane)
 		Stories.Decide(self, order, choice)
 	end
 	-- The retained legacy rules use Report for timeout ties.
+	if choice == "Report" and order.VotePurpose ~= "Software" and not order.ReportCounted then
+		order.ReportCounted = true
+		self.anomaliesReported = (self.anomaliesReported or 0) + 1
+	end
 	table.insert(self.decisions, choice)
 	if choice == "Report" then
 		self.suspicion = math.max(0, self.suspicion - 15)

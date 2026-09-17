@@ -1,6 +1,6 @@
 -- Maintained in common/CommonServer/PlayerData/ProfileSchema.luau. Deploy with tools/SyncCommon.ps1.
 -- Pure schema. Replicated ValueObjects are views, never the save source.
-local Schema = { Version = 3 }
+local Schema = { Version = 4 }
 
 function Schema.Copy(value)
 	if type(value) ~= "table" then
@@ -20,6 +20,7 @@ end
 function Schema.Default()
 	return {
 		Version = Schema.Version,
+		EmployeeNumber = 0, -- Assigned atomically when the server first acquires this profile.
 		Stats = { Credits = 0, ShiftsSurvived = 0, CasesSolved = 0, Deaths = 0, PlaytimeSeconds = 0 },
 		Progress = { HighestShift = 1, TutorialComplete = false, Endings = {}, Evidence = {} },
 		Settings = {
@@ -45,6 +46,9 @@ function Schema.Validate(data)
 		return false
 	end
 	if type(data.Stats) ~= "table" or type(data.Progress) ~= "table" or type(data.Settings) ~= "table" then
+		return false
+	end
+	if data.EmployeeNumber ~= 0 and not integer(data.EmployeeNumber, 1000, 9999) then
 		return false
 	end
 	for _, key in ipairs({ "Credits", "ShiftsSurvived", "CasesSolved", "Deaths", "PlaytimeSeconds" }) do
@@ -114,10 +118,15 @@ function Schema.Decode(record)
 		if type(data.Settings) ~= "table" then
 			return nil
 		end
-		data.Version = Schema.Version
+		data.Version = 3
 		data.Settings.MusicEnabled = type(data.Settings.MusicVolume) == "number" and data.Settings.MusicVolume > 0
 		data.Settings.SFXEnabled = true
 		data.Settings.CameraShake = true
+	end
+	if type(data) == "table" and data.Version == 3 then
+		data = Schema.Copy(data)
+		data.Version = Schema.Version
+		data.EmployeeNumber = 0
 	end
 	if not Schema.Validate(data) then
 		return nil

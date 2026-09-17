@@ -32,11 +32,14 @@ function Controller.Start(entrypoint, network)
 		return playerGui:GetAttribute("DPU_SettingsOpen") == true
 	end
 	assert(playerGui:WaitForChild("DPU_PrototypeHUD", 30), "[DPU] Missing StarterGui.DPU_PrototypeHUD")
-	assert(playerGui:WaitForChild("DPU_Cursor", 30), "[DPU] Missing StarterGui.DPU_Cursor")
+	assert(
+		playerGui:FindFirstChild("Crosshair") or playerGui:WaitForChild("DPU_Cursor", 5),
+		"[DPU] Missing StarterGui.Crosshair"
+	)
 	local scene = assert(workspace:WaitForChild("Prototype", 30), "[DPU] Missing Workspace.Prototype")
 	assert(scene:WaitForChild("DPU_Prototype", 30), "[DPU] Missing Workspace.Prototype.DPU_Prototype")
-	assert(scene:WaitForChild("DPU_InteractFocus", 30), "[DPU] Missing saved interaction highlight")
-	assert(scene:WaitForChild("DPU_RepairFocus", 30), "[DPU] Missing saved repair highlight")
+	-- Highlights are local presentation helpers. Their owners reuse saved copies or
+	-- create temporary ones; missing effects must never prevent HUD/input startup.
 
 	local function updateRepairTasks()
 		-- Release puzzle visibility before the fitting animation captures the phone.
@@ -128,7 +131,7 @@ function Controller.Start(entrypoint, network)
 		end,
 		needsPointer = function()
 			return (view:IsModalOpen() or settingsOpen())
-				or view.signalMenu.Visible
+				or (view.signalMenu and view.signalMenu.Visible)
 				or state.Seated == true
 				or (fax and fax:NeedsPointer())
 				or (television and television:NeedsPointer())
@@ -189,8 +192,7 @@ function Controller.Start(entrypoint, network)
 		end,
 		send = function(action, payload)
 			if payload.Station == "Answer" then
-				view.confirmAnswer = state.Event and state.Event.Id
-				view:Render()
+				view:RequestAnswer()
 			else
 				send(action, payload)
 			end
@@ -208,6 +210,18 @@ function Controller.Start(entrypoint, network)
 		authoredHud:WaitForChild("Frames", 5)
 	end
 	view.panels = ShiftPanels.new(playerGui, {
+		noticeUnderstood = function()
+			view:AcknowledgeNotice()
+		end,
+		introUnderstood = function()
+			view:AcknowledgeIntro()
+		end,
+		player = player,
+		clockAction = function(action)
+			if stationInteraction then
+				stationInteraction:Submit(action)
+			end
+		end,
 		changed = function()
 			view:Render()
 		end,
@@ -237,7 +251,7 @@ function Controller.Start(entrypoint, network)
 			return view:IsModalOpen()
 				or settingsOpen()
 				or guiService.MenuIsOpen
-				or view.signalMenu.Visible
+				or (view.signalMenu and view.signalMenu.Visible)
 				or pending ~= nil
 				or state.Alive ~= true
 				or state.NeedsClockIn
@@ -331,6 +345,10 @@ function Controller.Start(entrypoint, network)
 		end,
 	})
 	stationInteraction = StationInteraction.new({
+		panels = view.panels,
+		isBusy = function()
+			return pending ~= nil
+		end,
 		workspace = workspace,
 		player = player,
 		tweens = game:GetService("TweenService"),

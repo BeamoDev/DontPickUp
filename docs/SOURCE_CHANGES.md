@@ -14,6 +14,38 @@ Targeted checks cover the screenshot's missing anchors/nested lights, precise mo
 
 Studio: use 2?4 clients to contest a bench/drawer/phone, leave or reset while repairing/carrying/calling, join mid-shift, complete concurrent repairs, die while a teammate continues, then retry and return to Lobby. Check imported phone placement and loose-part camera coverage, blackout lights, gray mugshots, texture permissions and speaker transitions on real rigs. No additional Workspace deletions are required.
 
+## Missing saved highlight startup fix
+
+SessionController no longer waits for optional DPU_RepairFocus or DPU_InteractFocus. AuthoredUI.Highlight borrows the saved effect or creates a temporary client-only fallback. RepairPresentation and WorldInteractionController release only the effects they own; saved styles and authored HUD elements are preserved. Regression checks construct both real controllers with their saved highlight removed, exercise objectives/input, and verify cleanup.
+
+## Rotated storage and repair presentation
+
+ContainerService captures the cabinet pivot's local -Z slide direction, using that same vector for boxes, labels and stock. Container camera fitting includes the rotated travel. No rotation of individual drawer meshes is required.
+
+ScrewIndicator adds pooled local ring decorations to real screw gestures; hit detection is smaller and projects at each mesh's height. After cover/battery removal, DiagnosisView reuses the authored TaskSurface for three animated component meters and server-validated replacement selection. Physical diagnostic/replace blocks are no longer generated for that stage. GUI styles are restored and owned animations/effects are cleaned up on exit.
+
+## Clock-in card and persistent employee identity
+
+HUD.Frames.ClockIn replaces the legacy Timecard where present. StationInteractionController retains server focus/range validation and delegates presentation to ShiftPanelController, including the mugshot, username, night and saved employee number. Start clocks in; Back closes without stamping. Authored text style and Department/Title artwork stay unchanged.
+
+Common ProfileSchema is now version 4. ProfileStore commits decoded migrations and an initial four-digit EmployeeNumber during lease acquisition, before DataService publishes Ready. PlayerView exposes DPU_EmployeeNumber in both places. Sync the generated GServer and LServer PlayerData modules together; the DataStore name, lease protection and practice-mode behavior are unchanged. See HUD_PANELS.md for hierarchy and verification.
+
+## Single-button authored briefing
+
+HUD.Frames.Briefing binds Title, Section1 and Understood through ShiftPanelController. HUDController selects this card for the introductory briefing, suppresses the legacy multi-button modal, and acknowledges it locally once per run. Section1 retains TextScaled with the existing concise nightly copy and escaped RichText color emphasis. The legacy modal still serves team votes and successful results. No server, profile or world changes are required for this presentation update.
+
+## HUD clock, crosshair and animated scare migration
+
+HUD.Clock and HUD.Scare take precedence over the old DPU children. Crosshair.Frame replaces DPU_Cursor.Dot. The deleted legacy Briefing and TeamSignals are optional; the new Briefing supplies short fallback notices/results without generating controls. See PROTOTYPE_ASSETS.md for the exact remaining DPU list and transition behavior.
+
+ScareActor pools the authored ScaryNPC in a WorldModel and caches the six Monster 2 animation tracks from MonsterAnimations. HorrorController applies a slow viewport-only FOV zoom, retains server-issued scare lifecycle and reduced-motion handling, and restores authored model/camera state during cleanup. Tests remove the old UI before constructing the real controllers, check the animated rig and camera restoration, and reject unexpected fixed-UI construction.
+
+## ShiftComplete card and numeric night fields
+
+HUD.Frames.ShiftComplete displays server-frozen CompleteStats: nightly team repairs, unique resolved evidence reports and the employee's clocked-in time for that shift. Software votes and duplicate report callbacks are excluded. NextNight/Lobby retain the existing readiness, settlement and travel validation. The new card suppresses legacy/fallback results; dead employees still see GameLost. Night value fields no longer include NIGHT/NIGHTS prefixes.
+
+HUD.Objective.Frame now binds its objective text with an optional Use button and preserves authored layout. Sync GClient and GServer together for the new completion snapshot. Tests cover report counting, frozen snapshots, successive nights, team readiness, value-only card fields and the moved objective without old DPU controls.
+
 ## Sync this change
 
 1. Stop Play in Studio. Run `powershell -NoProfile -ExecutionPolicy Bypass -File tools/SyncCommon.ps1` after editing common code, then `tests/Run.ps1`.
@@ -236,3 +268,13 @@ SessionController starts the active client's systems explicitly. SessionService 
 | `LShared/UI/QueueView` | `LClient/Interface/QueueView` |
 
 Historical implementation details remain in IMPLEMENTATION_HISTORY.md. PrototypeRestoration.json retains original Git provenance with updated current destinations.
+
+## HUD.Dialogue binding
+
+Both dialogue modes now prefer the authored `HUD.Dialogue` card, including nested Frame descendants. Older subtitle locations remain optional fallbacks. The session hides unused duplicates and restores them on teardown; typing, fade/slide transitions, grayscale portraits, camera settings and authored text geometry remain unchanged. Sync GClient; no server or Lobby change is required for this migration.
+
+## Physical screw mouse alignment
+
+PhysicalRepairView now samples GetMouseLocation for mouse press, movement and release before using ViewportPointToRay, matching world interaction input. It also refreshes the held mouse position inside the existing repair render callback, so stale MouseButton1/event positions cannot offset or stall a gesture. Touch retains its tracked finger coordinates. Small screw hit radii, per-part height projection, UI blocking and revision-scoped server submissions are unchanged.
+
+Regression checks exercise all four screws with differing event/live pointer coordinates (0, 36 and 58 pixel insets), live movement without new mouse events, processed UI clicks and duplicate releases. Sync GClient and test removal/reassembly in Studio, including windowed/fullscreen and both benches. Local mocks cannot confirm the imported meshes or actual cursor alignment.

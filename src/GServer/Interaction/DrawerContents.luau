@@ -41,7 +41,7 @@ function Contents.Tween(record, services, config)
 		if state.tween then
 			state.tween:Cancel()
 		end
-		state.target = record.open and state.closed + config.OpenOffset or state.closed
+		state.target = record.open and state.closed + record.offset or state.closed
 		-- Loose welded contents already follow the box's assembly.
 		local follows = not item.Anchored and table.find(item:GetConnectedParts(true), record.box) ~= nil
 		if not follows then

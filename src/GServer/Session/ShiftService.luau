@@ -117,6 +117,7 @@ function Shift:_start(continuing)
 	self.phase, self.reason, self.endedAt = "Tutorial", nil, nil
 	self.startedAt, self.nightAt, self.eventIndex, self.event = self.d.clock(), nil, 1, nil
 	self.serial, self.repaired, self.missed, self.revenue = 0, 0, 0, 0
+	self.anomaliesReported = 0
 	self.suspicion = continuing and self.suspicion or 0
 	self.stations = Stations.New()
 	self.voteOrderId = nil
@@ -199,7 +200,11 @@ function Shift:Finish(reason)
 		member.ScareImpact, member.Outside = nil, nil
 		if member.Alive and not member.Spectator and reason == "Dawn" then
 			member.Outcome = "Survived"
+			Stats.Complete(member, self.nightsCleared, self.endedAt, self.repaired, self.anomaliesReported)
 		end
+	end
+	-- Freeze every employee before settlement can publish or yield.
+	for player, member in pairs(self.players) do
 		self:_settle(player, member)
 	end
 	self.employeeReports = Engagement.BuildReports(self)

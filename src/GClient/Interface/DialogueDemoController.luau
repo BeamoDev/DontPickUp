@@ -55,7 +55,7 @@ function Controller:Bind()
 		if self.pending and not self.warned then
 			self.warned = true
 			warn(
-				"[DPU][Dialogue] Waiting for HUD.Subtitles or DPU_PrototypeHUD.DialogueSubtitles with Title, Paragraph and CharacterViewPort.ViewportFrame"
+				"[DPU][Dialogue] Waiting for HUD.Dialogue (legacy HUD.Subtitles / DPU_PrototypeHUD.DialogueSubtitles also supported) with Title, Paragraph and CharacterViewPort.ViewportFrame"
 			)
 		end
 		return

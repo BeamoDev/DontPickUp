@@ -7,7 +7,7 @@ Required authored instances:
 ```text
 StarterGui
   HUD [ScreenGui]
-    Subtitles [Frame]
+    Dialogue [Frame]
       Frame
         CharacterViewPort
           ViewportFrame
@@ -21,7 +21,7 @@ ReplicatedStorage
     NPC [rigged Model with Humanoid or AnimationController]
 ```
 
-Title, Paragraph and CharacterViewPort can be nested within Subtitles; the resolver finds their authored descendants. The `assets` spelling is accepted as a fallback for the asset folder, and lowercase `npc` is a compatibility fallback for `NPC`. No replacement HUD or character is generated. Missing UI waits for the authored instances and produces one diagnostic; it does not block other Game systems.
+Title, Paragraph and CharacterViewPort can be nested within Dialogue; the resolver finds their authored descendants. The `assets` spelling is accepted as a fallback for the asset folder, and lowercase `npc` is a compatibility fallback for `NPC`. No replacement HUD or character is generated. Missing UI waits for the authored instances and produces one diagnostic; it does not block other Game systems.
 
 ## Presentation
 
@@ -67,7 +67,7 @@ Speaker title colours: You `RGB(166, 202, 161)` (faint green); Customer `RGB(224
 
 `ReplicatedStorage.Assets.NPC` is now a Folder of authored customer Models. Prototype orders carry a server-selected appearance ID so world customers and their subtitle portraits match, including for duplicate source names. Existing single-Model NPC setups remain supported. Customer titles stay pale orange and You stays pale green. Current presentation preserves authored text settings, card layout, and the existing viewport Camera CFrame/FOV; earlier auto-fitting, lowercase asset, fixed-text-size and card-size notes above are historical.
 
-The current prototype card is `DPU_PrototypeHUD.DialogueSubtitles.Frame`, containing `Title`, `Paragraph` and `CharacterViewPort.ViewportFrame`. Prototype mode prefers this card over HUD.Subtitles and suppresses only the unused card. A separate HUD ScreenGui is optional. Existing viewport cameras are reused unchanged; if none exists, the existing DialogueConfig pose and FOV initialize an owned camera. No authored UI is generated or renamed.
+The current card is `HUD.Dialogue`, containing `Title`, `Paragraph` and `CharacterViewPort.ViewportFrame`, optionally inside `Frame`. Both Game modes prefer this card. `DPU_PrototypeHUD.DialogueSubtitles` and `HUD.Subtitles` remain compatibility fallbacks; the active session hides both unused legacy cards and restores their visibility on teardown. The old subtitle cards can be deleted once the new card is present. Existing viewport cameras are reused unchanged; if none exists, the existing DialogueConfig pose and FOV initialize an owned camera. No authored UI is generated or renamed.
 
 
 ## Monochrome portraits

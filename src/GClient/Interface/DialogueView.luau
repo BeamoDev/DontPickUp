@@ -24,9 +24,10 @@ local function findCard(hud, name)
 	return { hud = hud, root = root, title = title, paragraph = paragraph, viewport = viewport }
 end
 function View.Find(playerGui, preferredHud)
-	-- The prototype's authored card now lives inside its own ScreenGui. Prefer
-	-- that complete card; older places can still use HUD.Subtitles.
-	return findCard(preferredHud, "DialogueSubtitles")
+	-- Prefer the migrated HUD card in both Game modes. Older authored
+	-- places remain supported until their subtitle card has moved.
+	return findCard(playerGui:FindFirstChild("HUD"), "Dialogue")
+		or findCard(preferredHud, "DialogueSubtitles")
 		or findCard(playerGui:FindFirstChild("HUD"), "Subtitles")
 		or findCard(playerGui:FindFirstChild("DPU_PrototypeHUD"), "DialogueSubtitles")
 end

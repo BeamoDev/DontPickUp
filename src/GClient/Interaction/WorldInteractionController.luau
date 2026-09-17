@@ -11,8 +11,9 @@ function Interaction.new(gui, deps)
 		{ d = deps, connections = {}, blocked = true, focused = true, state = {}, raycast = RaycastParams.new() },
 		Interaction
 	)
-	self.highlight =
-		UI.Bind("Highlight", deps.workspace:FindFirstChild("Prototype"), "DPU_InteractFocus", { Enabled = false })
+	self.highlight = UI.Highlight(deps.workspace:FindFirstChild("Prototype"), "DPU_InteractFocus", {
+		OutlineColor = Color3.fromRGB(235, 230, 214),
+	})
 	self.selection = Selection.Bind(deps.workspace, self.highlight, deps.tweens)
 	self.hint = UI.Bind("TextLabel", gui, "ObjectAction", { Visible = false })
 	local function connect(signal, callback)
